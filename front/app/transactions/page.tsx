@@ -48,7 +48,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Transaction, Category } from '@/lib/types'
-import { DataProvider } from '@/context/DataContext' // Import DataProvider
+import { DataProvider } from '@/lib/data-context'
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-US', {
