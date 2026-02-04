@@ -32,6 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { AddTransactionSheet } from '@/components/add-transaction-sheet'
 
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
@@ -56,6 +57,7 @@ export function AppShell({
 }: AppShellProps) {
   const pathname = usePathname()
   const [fabOpen, setFabOpen] = useState(false)
+  const [showAddTransaction, setShowAddTransaction] = useState(false)
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -93,7 +95,10 @@ export function AppShell({
         </nav>
 
         <div className="p-4 border-t border-sidebar-border">
-          <Button className="w-full bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90">
+          <Button 
+            className="w-full bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90"
+            onClick={() => setShowAddTransaction(true)}
+          >
             <Plus className="h-4 w-4 mr-2" />
             Add Transaction
           </Button>
@@ -214,7 +219,7 @@ export function AppShell({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48 mb-2">
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setFabOpen(false); setShowAddTransaction(true) }}>
                 <Wallet className="h-4 w-4 mr-2" />
                 Manual Transaction
               </DropdownMenuItem>
@@ -230,6 +235,8 @@ export function AppShell({
           </DropdownMenu>
         </div>
       </div>
+
+      <AddTransactionSheet open={showAddTransaction} onOpenChange={setShowAddTransaction} />
     </div>
   )
 }

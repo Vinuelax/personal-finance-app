@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Transaction, BillInstance, RecurringPayment } from '@/lib/types'
+import { AddTransactionSheet } from '@/components/add-transaction-sheet'
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-US', {
@@ -59,6 +60,7 @@ function CalendarContent() {
   const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 1)) // January 2026
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null)
   const [showProjected, setShowProjected] = useState(true)
+  const [showAddTransaction, setShowAddTransaction] = useState(false)
 
   // Get bills with names
   const billsWithNames = useMemo(() => 
@@ -392,13 +394,15 @@ function CalendarContent() {
 
           {/* Quick Add */}
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-background border-t safe-area-bottom">
-            <Button className="w-full">
+            <Button className="w-full" onClick={() => setShowAddTransaction(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Add Transaction
             </Button>
           </div>
         </SheetContent>
       </Sheet>
+
+      <AddTransactionSheet open={showAddTransaction} onOpenChange={setShowAddTransaction} />
     </AppShell>
   )
 }

@@ -1,8 +1,9 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import type {
   Transaction,
+  TransactionSplit,
   Category,
   RecurringPayment,
   BillInstance,
@@ -11,6 +12,7 @@ import type {
   FintualGoal,
   UserSettings,
   SyncStatus,
+  Receipt,
 } from './types'
 import {
   demoTransactions,
@@ -37,15 +39,22 @@ interface DataContextType {
   ious: IOU[]
   investments: Investment[]
   fintualGoals: FintualGoal[]
+  receipts: Receipt[]
   settings: UserSettings
   syncStatus: SyncStatus
   user: User
   currency: string
   
   // Actions
+  updateUser: (updates: Partial<User>) => void
+  setCurrency: (symbol: string) => void
   addTransaction: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => void
   updateTransaction: (id: string, updates: Partial<Transaction>) => void
   deleteTransaction: (id: string) => void
+  addTransactionSplit: (id: string, split: TransactionSplit) => void
+  removeTransactionSplit: (id: string, splitId: string) => void
+  attachReceiptToTransaction: (transactionId: string, receiptId: string | null) => void
+  addReceipt: (receipt: Omit<Receipt, 'id'>) => string
   addCategory: (category: Omit<Category, 'id' | 'currentMonthSpent'>) => void
   updateCategory: (id: string, updates: Partial<Category>) => void
   addIOU: (iou: Omit<IOU, 'id' | 'createdAt' | 'settledAt'>) => void
@@ -53,7 +62,12 @@ interface DataContextType {
   addInvestment: (investment: Omit<Investment, 'id'>) => void
   updateInvestment: (id: string, updates: Partial<Investment>) => void
   deleteInvestment: (id: string) => void
+  addRecurringPayment: (payment: Omit<RecurringPayment, 'id' | 'paused'>) => void
+  updateRecurringPayment: (id: string, updates: Partial<RecurringPayment>) => void
+  toggleRecurringPause: (id: string, paused: boolean) => void
+  stopRecurringPayment: (id: string) => void
   updateSettings: (updates: Partial<UserSettings>) => void
+  clearAllData: () => void
   loadDemoData: () => void
   clearData: () => void
   formatCurrency: (amount: number) => string
@@ -69,6 +83,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [ious, setIOUs] = useState<IOU[]>(demoIOUs)
   const [investments, setInvestments] = useState<Investment[]>(demoInvestments)
   const [fintualGoals, setFintualGoals] = useState<FintualGoal[]>(demoFintualGoals)
+  const [receipts, setReceipts] = useState<Receipt[]>([])
   const [settings, setSettings] = useState<UserSettings>({
     currency: 'USD',
     weekStartDay: 0,
@@ -78,9 +93,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     isOnline: true,
     isSyncing: false,
-    lastSyncedAt: new Date().toISOString(),
+    lastSyncedAt: null,
   })
-  const [user] = useState<User>({
+  const [user, setUser] = useState<User>({
     name: 'Demo User',
     email: 'demo@ledger.app',
   })
@@ -93,6 +108,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
       currency: settings.currency,
     }).format(amount)
   }, [settings.currency])
+
+  // Set initial lastSyncedAt on client to avoid server/client time mismatch
+  useEffect(() => {
+    setSyncStatus(prev => ({ ...prev, lastSyncedAt: new Date().toISOString() }))
+  }, [])
+
+  const updateUser = useCallback((updates: Partial<User>) => {
+    setUser(prev => ({ ...prev, ...updates }))
+  }, [])
+
+  const setCurrency = useCallback((symbol: string) => {
+    setSettings(prev => ({ ...prev, currency: symbol }))
+  }, [])
 
   const addTransaction = useCallback((transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
     const newTransaction: Transaction = {
@@ -111,6 +139,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const deleteTransaction = useCallback((id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id))
+  }, [])
+
+  const addTransactionSplit = useCallback((id: string, split: TransactionSplit) => {
+    setTransactions(prev =>
+      prev.map(t =>
+        t.id === id
+          ? { ...t, splits: [...(t.splits || []), split] }
+          : t
+      )
+    )
+  }, [])
+
+  const removeTransactionSplit = useCallback((id: string, splitId: string) => {
+    setTransactions(prev =>
+      prev.map(t =>
+        t.id === id
+          ? { ...t, splits: (t.splits || []).filter(s => s.id !== splitId) }
+          : t
+      )
+    )
+  }, [])
+
+  const addReceipt = useCallback((receipt: Omit<Receipt, 'id'>) => {
+    const newReceipt: Receipt = { ...receipt, id: `rcpt-${Date.now()}` }
+    setReceipts(prev => [newReceipt, ...prev])
+    return newReceipt.id
+  }, [])
+
+  const attachReceiptToTransaction = useCallback((transactionId: string, receiptId: string | null) => {
+    setTransactions(prev =>
+      prev.map(t => (t.id === transactionId ? { ...t, receiptId } : t))
+    )
   }, [])
 
   const addCategory = useCallback((category: Omit<Category, 'id' | 'currentMonthSpent'>) => {
@@ -166,6 +226,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setInvestments(prev => prev.filter(inv => inv.id !== id))
   }, [])
 
+  const addRecurringPayment = useCallback((payment: Omit<RecurringPayment, 'id' | 'paused'>) => {
+    const newPayment: RecurringPayment = { ...payment, id: `rec-${Date.now()}`, paused: false }
+    setRecurringPayments(prev => [...prev, newPayment])
+  }, [])
+
+  const updateRecurringPayment = useCallback((id: string, updates: Partial<RecurringPayment>) => {
+    setRecurringPayments(prev =>
+      prev.map(p => p.id === id ? { ...p, ...updates } : p)
+    )
+  }, [])
+
+  const toggleRecurringPause = useCallback((id: string, paused: boolean) => {
+    setRecurringPayments(prev =>
+      prev.map(p => (p.id === id ? { ...p, paused } : p))
+    )
+  }, [])
+
+  const stopRecurringPayment = useCallback((id: string) => {
+    const today = new Date().toISOString().split('T')[0]
+    setRecurringPayments(prev =>
+      prev.map(p => (p.id === id ? { ...p, endDate: today, paused: true } : p))
+    )
+  }, [])
+
   const updateSettings = useCallback((updates: Partial<UserSettings>) => {
     setSettings(prev => ({ ...prev, ...updates }))
   }, [])
@@ -178,6 +262,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setIOUs(demoIOUs)
     setInvestments(demoInvestments)
     setFintualGoals(demoFintualGoals)
+    setReceipts([])
     setSettings(prev => ({ ...prev, demoMode: true }))
   }, [])
 
@@ -189,8 +274,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setIOUs([])
     setInvestments([])
     setFintualGoals([])
+    setReceipts([])
     setSettings(prev => ({ ...prev, demoMode: false }))
   }, [])
+
+  const clearAllData = clearData
 
   return (
     <DataContext.Provider
@@ -202,13 +290,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ious,
         investments,
         fintualGoals,
+        receipts,
         settings,
         syncStatus,
         user,
         currency,
+        updateUser,
+        setCurrency,
         addTransaction,
         updateTransaction,
         deleteTransaction,
+        addTransactionSplit,
+        removeTransactionSplit,
+        attachReceiptToTransaction,
+        addReceipt,
         addCategory,
         updateCategory,
         addIOU,
@@ -216,7 +311,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         addInvestment,
         updateInvestment,
         deleteInvestment,
+        addRecurringPayment,
+        updateRecurringPayment,
+        toggleRecurringPause,
+        stopRecurringPayment,
         updateSettings,
+        clearAllData,
         loadDemoData,
         clearData,
         formatCurrency,

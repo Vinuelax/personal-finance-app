@@ -11,6 +11,9 @@ import { cn } from '@/lib/utils'
 import type { Transaction, Category, BillInstance, IOU, Investment, RecurringPayment } from '@/lib/types'
 import { SparklineChart } from './sparkline-chart'
 
+const formatShortUTCDate = (dateStr: string) =>
+  new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(dateStr))
+
 // Format currency
 function formatCurrency(amount: number, showSign = false) {
   const formatted = new Intl.NumberFormat('en-US', {
@@ -214,7 +217,7 @@ export function UncategorizedCard({ transactions, isLoading }: UncategorizedCard
             <div>
               <p className="text-sm font-medium">{txn.merchant}</p>
               <p className="text-xs text-muted-foreground">
-                {new Date(txn.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {formatShortUTCDate(txn.date)}
               </p>
             </div>
             <p className="text-sm font-medium text-negative">{formatCurrency(txn.amount)}</p>
@@ -267,7 +270,7 @@ export function UpcomingCard({ billInstances, recurringPayments, isLoading }: Up
         </CardHeader>
         <CardContent className="text-center py-4">
           <p className="text-sm text-muted-foreground">No upcoming bills</p>
-          <Link href="/settings/recurring">
+          <Link href="/transactions?tab=recurring">
             <Button variant="link" size="sm" className="mt-1">
               Add recurring payment
             </Button>
@@ -296,7 +299,7 @@ export function UpcomingCard({ billInstances, recurringPayments, isLoading }: Up
             <div>
               <p className="text-sm font-medium">{bill.name}</p>
               <p className="text-xs text-muted-foreground">
-                Due {new Date(bill.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                Due {formatShortUTCDate(bill.dueDate)}
               </p>
             </div>
             <p className="text-sm font-medium">{formatCurrency(bill.amount)}</p>

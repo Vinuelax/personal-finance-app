@@ -27,10 +27,24 @@ function DashboardContent() {
     settings
   } = useData()
 
+  const formatSyncTime = (iso: string | null) => {
+    if (!iso) return 'Not synced'
+    const date = new Date(iso)
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'UTC',
+    }).format(date)
+  }
+
   const totalSpent = getTotalSpentThisMonth(transactions)
   const totalIncome = getTotalIncomeThisMonth(transactions)
   const dailySpending = getSpendingByDay(transactions, 14)
 
+
+
+
+  
   return (
     <AppShell title="Home" showSearch>
       <div className="px-4 lg:px-6 py-4">
@@ -52,7 +66,7 @@ function DashboardContent() {
                 {syncStatus.isSyncing 
                   ? 'Syncing...' 
                   : syncStatus.lastSyncedAt 
-                    ? `Updated ${new Date(syncStatus.lastSyncedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                    ? `Updated ${formatSyncTime(syncStatus.lastSyncedAt)}`
                     : 'Not synced'
                 }
               </span>
@@ -93,6 +107,8 @@ function DashboardContent() {
     </AppShell>
   )
 }
+
+
 
 export default function HomePage() {
   return (

@@ -19,10 +19,41 @@ services:
       - "3001:3000"
     environment:
       NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "800"
+      NEXT_WEBPACK_USEPOLLING: "1"
+      NEXT_DISABLE_TURBOPACK: "1"
     volumes:
       - ./front:/app
       - /app/node_modules
     command: >
       sh -c "corepack enable &&
-             pnpm install &&
-             pnpm dev --hostname 0.0.0.0 --port 3000"
+             ([ -d node_modules ] || pnpm install) &&
+             pnpm run dev --hostname 0.0.0.0 --port 3000 --webpack"
+
+  api:
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+      target: prod
+    working_dir: /app
+    environment:
+      ENVIRONMENT: production
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  api-dev:
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+      target: dev
+    working_dir: /app
+    environment:
+      ENVIRONMENT: development
+    volumes:
+      - ./back:/app
+    ports:
+      - "8001:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -1,5 +1,12 @@
 // Core data types for Ledger
 
+export interface TransactionSplit {
+  id: string
+  label: string
+  amount: number
+  categoryId: string | null
+}
+
 export interface Transaction {
   id: string
   date: string
@@ -9,6 +16,7 @@ export interface Transaction {
   notes: string
   source: 'bank' | 'manual'
   receiptId: string | null
+  splits?: TransactionSplit[]
   createdAt: string
 }
 
