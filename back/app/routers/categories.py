@@ -1,13 +1,13 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import uuid
 from datetime import datetime, timezone
 
-from app.deps import get_db
+from utils.deps import get_db, get_current_user
 from utils.db import DB, list_categories
 
-router = APIRouter(prefix="/api/categories", tags=["categories"])
+router = APIRouter(tags=["categories"])
 
 
 class CategoryIn(BaseModel):
@@ -26,8 +26,8 @@ def _now_iso() -> str:
 
 
 @router.get("", response_model=List[Category])
-def api_list_categories(user_id: str = Query("u_001"), db: DB = Depends(get_db)):
-    items = list_categories(db, user_id)
+def api_list_categories(current_user=Depends(get_current_user), db: DB = Depends(get_db)):
+    items = list_categories(db, current_user["user_id"])
     return [
         {
             "categoryId": i.get("categoryId"),
@@ -41,10 +41,10 @@ def api_list_categories(user_id: str = Query("u_001"), db: DB = Depends(get_db))
 
 
 @router.post("", response_model=Category)
-def api_create_category(payload: CategoryIn, user_id: str = Query("u_001"), db: DB = Depends(get_db)):
+def api_create_category(payload: CategoryIn, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
     cat_id = f"cat_{uuid.uuid4().hex[:8]}"
     item = {
-        "PK": f"USER#{user_id}",
+        "PK": f"USER#{current_user['user_id']}",
         "SK": f"CAT#{cat_id}",
         "entityType": "Category",
         "categoryId": cat_id,
@@ -57,8 +57,8 @@ def api_create_category(payload: CategoryIn, user_id: str = Query("u_001"), db: 
 
 
 @router.patch("/{category_id}", response_model=Category)
-def api_update_category(category_id: str, payload: CategoryIn, user_id: str = Query("u_001"), db: DB = Depends(get_db)):
-    pk = f"USER#{user_id}"
+def api_update_category(category_id: str, payload: CategoryIn, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
+    pk = f"USER#{current_user['user_id']}"
     sk = f"CAT#{category_id}"
     updated = db.update(pk, sk, {**payload.model_dump(), "updatedAt": _now_iso()})
     if not updated:
@@ -67,8 +67,8 @@ def api_update_category(category_id: str, payload: CategoryIn, user_id: str = Qu
 
 
 @router.delete("/{category_id}")
-def api_delete_category(category_id: str, user_id: str = Query("u_001"), db: DB = Depends(get_db)):
-    ok = db.delete(f"USER#{user_id}", f"CAT#{category_id}")
+def api_delete_category(category_id: str, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
+    ok = db.delete(f"USER#{current_user['user_id']}", f"CAT#{category_id}")
     if not ok:
         raise HTTPException(404, "Category not found")
     return {"deleted": True}

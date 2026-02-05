@@ -1,12 +1,12 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 
-from app.deps import get_db
+from utils.deps import get_db, get_current_user
 from utils.db import DB, list_budgets
 
-router = APIRouter(prefix="/api/budgets", tags=["budgets"])
+router = APIRouter(tags=["budgets"])
 
 
 class BudgetIn(BaseModel):
@@ -16,17 +16,22 @@ class BudgetIn(BaseModel):
     rollover: bool = False
 
 
+class BudgetUpdate(BaseModel):
+    limit: Optional[int] = None
+    rollover: Optional[bool] = None
+
+
 class Budget(BudgetIn):
     pass
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat()
 
 
 @router.get("", response_model=List[Budget])
-def api_list_budgets(month: Optional[str] = None, user_id: str = Query("u_001"), db: DB = Depends(get_db)):
-    items = list_budgets(db, user_id, month)
+def api_list_budgets(month: Optional[str] = None, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
+    items = list_budgets(db, current_user["user_id"], month)
     return [
         {
             "month": i.get("month"),
@@ -39,13 +44,13 @@ def api_list_budgets(month: Optional[str] = None, user_id: str = Query("u_001"),
 
 
 @router.post("", response_model=Budget)
-def api_create_budget(payload: BudgetIn, user_id: str = Query("u_001"), db: DB = Depends(get_db)):
+def api_create_budget(payload: BudgetIn, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
     sk = f"BUD#{payload.month}#{payload.categoryId}"
     item = {
-        "PK": f"USER#{user_id}",
+        "PK": f"USER#{current_user['user_id']}",
         "SK": sk,
         "entityType": "Budget",
-        **payload.dict(),
+        **payload.model_dump(),
         "createdAt": _now_iso(),
         "updatedAt": _now_iso(),
     }
@@ -54,18 +59,25 @@ def api_create_budget(payload: BudgetIn, user_id: str = Query("u_001"), db: DB =
 
 
 @router.patch("/{month}/{category_id}", response_model=Budget)
-def api_update_budget(month: str, category_id: str, payload: BudgetIn, user_id: str = Query("u_001"), db: DB = Depends(get_db)):
-    pk = f"USER#{user_id}"
+def api_update_budget(month: str, category_id: str, payload: BudgetUpdate, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
+    pk = f"USER#{current_user['user_id']}"
     sk = f"BUD#{month}#{category_id}"
-    updated = db.update(pk, sk, {**payload.dict(), "updatedAt": _now_iso()})
+    updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    updates["updatedAt"] = _now_iso()
+    updated = db.update(pk, sk, updates)
     if not updated:
         raise HTTPException(404, "Budget not found")
-    return payload
+    return {
+        "month": month,
+        "categoryId": category_id,
+        "limit": updated.get("limit"),
+        "rollover": updated.get("rollover", False),
+    }
 
 
 @router.delete("/{month}/{category_id}")
-def api_delete_budget(month: str, category_id: str, user_id: str = Query("u_001"), db: DB = Depends(get_db)):
-    ok = db.delete(f"USER#{user_id}", f"BUD#{month}#{category_id}")
+def api_delete_budget(month: str, category_id: str, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
+    ok = db.delete(f"USER#{current_user['user_id']}", f"BUD#{month}#{category_id}")
     if not ok:
         raise HTTPException(404, "Budget not found")
     return {"deleted": True}

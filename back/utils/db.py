@@ -145,8 +145,12 @@ def list_bills(
 ) -> List[Dict[str, Any]]:
     """Scan upcoming bills using GSI3 (date-sorted)."""
     items = db.gsi_query(f"{_user_pk(user_id)}#UPCOMING", begins_with="DATE#", index="GSI3")
+    # keep only bill instances
+    items = [i for i in items if i.get("entityType") == "BillInstance"]
     def within_date(item: Dict[str, Any]) -> bool:
         due = item.get("dueDate")
+        if not due:
+            return False
         if date_from and due < date_from:
             return False
         if date_to and due > date_to:

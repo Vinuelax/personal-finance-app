@@ -10,20 +10,23 @@ from httpx import ASGITransport
 
 # Ensure we import the app from the back package
 from app.main import app
-from app.deps import get_db
+from utils.deps import get_db, create_access_token
 
 
 class SyncASGIClient:
     """Minimal sync wrapper over httpx.AsyncClient + ASGITransport."""
 
-    def __init__(self, app):
+    def __init__(self, app, base_prefix: str = ""):
         self.transport = ASGITransport(app=app)
-        self.base_url = "http://testserver"
+        self.base_url = "http://testserver" + base_prefix
+        self.auth_header = {}
 
     def request(self, method: str, url: str, **kwargs):
         async def _do():
             async with httpx.AsyncClient(transport=self.transport, base_url=self.base_url) as client:
-                return await client.request(method, url, **kwargs)
+                headers = kwargs.pop("headers", {})
+                merged_headers = {**self.auth_header, **headers}
+                return await client.request(method, url, headers=merged_headers, **kwargs)
         return anyio.run(_do)
 
     def get(self, url: str, **kwargs):
@@ -54,7 +57,15 @@ def client(monkeypatch):
         json_path = copy_fixture(tmpdir)
         monkeypatch.setenv("DB_BACKEND", "jsonl")
         monkeypatch.setenv("DB_JSON_PATH", str(json_path))
+        # default auth config
+        monkeypatch.setenv("DEFAULT_USER_EMAIL", "user@example.com")
+        monkeypatch.setenv("DEFAULT_USER_PASSWORD", "pw")
+        monkeypatch.setenv("DEFAULT_USER_ID", "u_001")
         # ensure DB uses the temp file for this test only
         get_db.cache_clear()
 
-        yield SyncASGIClient(app)
+        client = SyncASGIClient(app, base_prefix="/api/v1")
+        # obtain auth token
+        token = create_access_token({"sub": "test@example.com", "user_id": "u_001"})
+        client.auth_header = {"Authorization": f"Bearer {token}"}
+        yield client
