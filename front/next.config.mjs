@@ -6,17 +6,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  webpack: (config, { dev }) => {
-    if (dev) {
-      // Help hot-reload when running inside Docker on filesystems that don't support native fs events
-      config.watchOptions = {
-        ...config.watchOptions,
-        poll: 1000,
-        aggregateTimeout: 300,
-      }
-    }
-    return config
-  },
+  // Turbopack is the default bundler in Next.js 16; an empty config
+  // signals that we're intentionally using it (avoids "webpack config without turbopack config" error).
+  turbopack: {},
 }
 
 export default nextConfig

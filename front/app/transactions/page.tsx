@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { Suspense, useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 import { useData } from '@/lib/data-context'
@@ -1344,7 +1344,9 @@ function TransactionsContent() {
 export default function TransactionsPage() {
   return (
     <DataProvider>
-      <TransactionsContent />
+      <Suspense fallback={<div className="p-4">Loading transactions...</div>}>
+        <TransactionsContent />
+      </Suspense>
     </DataProvider>
   )
 }
