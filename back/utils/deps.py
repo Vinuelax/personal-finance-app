@@ -1,4 +1,3 @@
-from functools import lru_cache
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
@@ -7,7 +6,11 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from utils.db import DB
+import logging
+
+logger = logging.getLogger("auth")
+
+from utils.db import DB, get_session
 
 # JWT settings
 SECRET_KEY = os.getenv("AUTH_SECRET", "dev-secret")
@@ -18,9 +21,13 @@ ISSUER = os.getenv("AUTH_ISSUER", "ledger-backend")
 security = HTTPBearer(auto_error=False)
 
 
-@lru_cache()
 def get_db() -> DB:
-    return DB()
+    session = get_session()
+    try:
+        db = DB(session)
+        yield db
+    finally:
+        session.close()
 
 
 def create_access_token(data: Dict[str, Any], expires_delta: timedelta | None = None) -> str:
@@ -45,10 +52,13 @@ def _decode_token(token: str) -> Dict[str, Any]:
             issuer=ISSUER,
             options={"require": ["exp", "iat", "iss"]},
         )
+        logger.info("Token decoded user_id=%s iss=%s exp=%s", payload.get("user_id"), payload.get("iss"), payload.get("exp"))
         return payload
     except jwt.ExpiredSignatureError:
+        logger.warning("Token expired")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as exc:
+        logger.warning("Invalid token: %s", exc)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 

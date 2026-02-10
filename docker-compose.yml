@@ -15,6 +15,8 @@ services:
   web-dev:
     image: node:22-alpine
     working_dir: /app
+    env_file:
+      - ${ENV_DEV:-.env.dev}
     ports:
       - "3001:3000"
     environment:
@@ -24,12 +26,13 @@ services:
       CHOKIDAR_INTERVAL: "800"
       NEXT_WEBPACK_USEPOLLING: "1"
       NEXT_DISABLE_TURBOPACK: "1"
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
     volumes:
       - ./front:/app
       - /app/node_modules
     command: >
       sh -c "corepack enable &&
-             ([ -d node_modules ] || pnpm install) &&
+             ( [ -d node_modules ] && [ \"$(ls -A node_modules 2>/dev/null)\" ] || pnpm install ) &&
              pnpm run dev --hostname 0.0.0.0 --port 3000 --webpack"
 
   api:
@@ -38,10 +41,14 @@ services:
       dockerfile: Dockerfile
       target: prod
     working_dir: /app
-    environment:
-      ENVIRONMENT: production
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/pfa
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   api-dev:
@@ -50,10 +57,32 @@ services:
       dockerfile: Dockerfile
       target: dev
     working_dir: /app
+    env_file:
+      - ${ENV_DEV:-.env.dev}
     environment:
       ENVIRONMENT: development
     volumes:
       - ./back:/app
     ports:
       - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pfa
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s

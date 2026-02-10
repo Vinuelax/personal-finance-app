@@ -2,9 +2,9 @@
 
 import React from "react"
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { AppShell } from '@/components/app-shell'
-import { DataProvider, useData } from '@/lib/data-context'
+import { useData } from '@/lib/data-context'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -25,56 +25,24 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  Edit2,
   Plus,
-  Trash2,
   Tag,
   ChevronRight
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Receipt, ReceiptLineItem } from '@/lib/types'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount)
+const useCurrencyFormatter = () => {
+  const { formatCurrency } = useData()
+  return formatCurrency
 }
-
-// Demo receipts
-const demoReceipts: Receipt[] = [
-  {
-    id: 'rec-1',
-    imageUrl: '/placeholder-receipt.jpg',
-    merchant: 'Whole Foods Market',
-    date: '2026-01-28',
-    total: 89.43,
-    lineItems: [
-      { id: 'li-1', description: 'Organic Bananas', amount: 3.49, categoryId: 'cat-1' },
-      { id: 'li-2', description: 'Almond Milk', amount: 5.99, categoryId: 'cat-1' },
-      { id: 'li-3', description: 'Fresh Salmon', amount: 24.99, categoryId: 'cat-1' },
-      { id: 'li-4', description: 'Mixed Greens', amount: 6.99, categoryId: null },
-      { id: 'li-5', description: 'Other items', amount: 47.97, categoryId: null },
-    ],
-    status: 'needs_review',
-    transactionId: null,
-  },
-  {
-    id: 'rec-2',
-    imageUrl: '/placeholder-receipt.jpg',
-    merchant: 'Target',
-    date: '2026-01-25',
-    total: 156.78,
-    lineItems: [
-      { id: 'li-6', description: 'Household supplies', amount: 45.00, categoryId: 'cat-6' },
-      { id: 'li-7', description: 'Clothing', amount: 89.78, categoryId: 'cat-6' },
-      { id: 'li-8', description: 'Snacks', amount: 22.00, categoryId: 'cat-1' },
-    ],
-    status: 'complete',
-    transactionId: 'txn-7',
-  },
-]
 
 // Upload Sheet
 interface UploadSheetProps {
@@ -176,10 +144,13 @@ function UploadSheet({ open, onClose, onUpload }: UploadSheetProps) {
 interface ReceiptDetailProps {
   receipt: Receipt | null
   onClose: () => void
+  onUpdateLineItem: (lineId: string, categoryId: string | null) => void
+  onComplete: () => void
+  categories: ReturnType<typeof useData>['categories']
 }
 
-function ReceiptDetail({ receipt, onClose }: ReceiptDetailProps) {
-  const { categories } = useData()
+function ReceiptDetail({ receipt, onClose, onUpdateLineItem, onComplete, categories }: ReceiptDetailProps) {
+  const formatCurrency = useCurrencyFormatter()
   const [editingLine, setEditingLine] = useState<string | null>(null)
 
   if (!receipt) return null
@@ -288,9 +259,20 @@ function ReceiptDetail({ receipt, onClose }: ReceiptDetailProps) {
                     
                     <p className="font-medium text-sm">{formatCurrency(item.amount)}</p>
                     
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
+                    <Select
+                      value={item.categoryId ?? ''}
+                      onValueChange={(val) => onUpdateLineItem(item.id, val || null)}
+                    >
+                      <SelectTrigger className="w-32 h-8 text-xs">
+                        <SelectValue placeholder="Category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Unassigned</SelectItem>
+                        {categories.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )
               })}
@@ -301,7 +283,7 @@ function ReceiptDetail({ receipt, onClose }: ReceiptDetailProps) {
         {/* Fixed Actions */}
         <div className="absolute bottom-0 left-0 right-0 p-4 bg-background border-t safe-area-bottom space-y-2">
           {receipt.status === 'needs_review' && (
-            <Button className="w-full" disabled={unallocated > 0.01}>
+            <Button className="w-full" disabled={unallocated > 0.01} onClick={onComplete}>
               <CheckCircle2 className="h-4 w-4 mr-2" />
               Complete Receipt
             </Button>
@@ -319,24 +301,43 @@ function ReceiptDetail({ receipt, onClose }: ReceiptDetailProps) {
 }
 
 function ReceiptsContent() {
-  const [receipts] = useState(demoReceipts)
+  const formatCurrency = useCurrencyFormatter()
+  const { receipts, uploadReceipt, updateReceipt, categories } = useData()
   const [showUpload, setShowUpload] = useState(false)
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null)
   const [uploadingReceipt, setUploadingReceipt] = useState(false)
 
+  const needsReview = useMemo(() => receipts.filter(r => r.status === 'needs_review'), [receipts])
+  const completed = useMemo(() => receipts.filter(r => r.status === 'complete'), [receipts])
+
   const handleUpload = async (file: File) => {
+    if (!uploadReceipt) return
     setShowUpload(false)
     setUploadingReceipt(true)
-    
-    // Simulate upload and parsing
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
+    const id = await uploadReceipt(file)
     setUploadingReceipt(false)
-    // Would normally add to receipts list
+    if (id) {
+      const created = receipts.find(r => r.id === id)
+      setSelectedReceipt(created || null)
+    }
   }
 
-  const needsReview = receipts.filter(r => r.status === 'needs_review')
-  const completed = receipts.filter(r => r.status === 'complete')
+  const handleLineItemCategory = (lineId: string, categoryId: string | null) => {
+    if (!selectedReceipt) return
+    const updated = {
+      ...selectedReceipt,
+      lineItems: selectedReceipt.lineItems.map(li => li.id === lineId ? { ...li, categoryId } : li),
+    }
+    setSelectedReceipt(updated)
+    updateReceipt(selectedReceipt.id, { lineItems: updated.lineItems })
+  }
+
+  const handleStatusComplete = () => {
+    if (!selectedReceipt) return
+    const updated = { ...selectedReceipt, status: 'complete' as const }
+    setSelectedReceipt(updated)
+    updateReceipt(selectedReceipt.id, { status: 'complete' })
+  }
 
   return (
     <AppShell title="Receipts">
@@ -473,15 +474,14 @@ function ReceiptsContent() {
       <ReceiptDetail
         receipt={selectedReceipt}
         onClose={() => setSelectedReceipt(null)}
+        onUpdateLineItem={handleLineItemCategory}
+        onComplete={handleStatusComplete}
+        categories={categories}
       />
     </AppShell>
   )
 }
 
 export default function ReceiptsPage() {
-  return (
-    <DataProvider>
-      <ReceiptsContent />
-    </DataProvider>
-  )
+  return <ReceiptsContent />
 }

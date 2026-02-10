@@ -1,7 +1,6 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-import uuid
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime, timezone
 
 from utils.deps import get_db, get_current_user
@@ -11,25 +10,88 @@ router = APIRouter(tags=["recurring"])
 
 
 class RecurringRuleIn(BaseModel):
-    name: str
-    amount: int
-    currency: str = "CLP"
-    categoryId: str | None = None
-    cadence: str = Field(..., pattern="^(MONTHLY|WEEKLY)$")
-    dayOfMonth: int | None = None
-    startDate: str
-    endDate: str | None = None
-    autopostMode: str = "PROJECT_ONLY"
-    isPaused: bool = False
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "name": "Internet bill",
+            "amount": -25000,
+            "currency": "CLP",
+            "categoryId": "cat_utilities",
+            "cadence": "MONTHLY",
+            "dayOfMonth": 15,
+            "startDate": "2025-01-01",
+            "endDate": None,
+            "autopostMode": "PROJECT_ONLY",
+            "isPaused": False
+        }
+    })
+
+    name: str = Field(..., description="Recurring item name")
+    amount: int = Field(..., description="Signed amount in minor units (negative for bills)")
+    currency: str = Field("CLP", description="ISO currency code")
+    categoryId: str | None = Field(None, description="Category to assign when posted")
+    cadence: str = Field(..., pattern="^(MONTHLY|WEEKLY)$", description="Posting cadence")
+    dayOfMonth: int | None = Field(None, description="Day of month for MONTHLY cadence")
+    startDate: str = Field(..., description="Start date YYYY-MM-DD")
+    endDate: str | None = Field(None, description="Optional end date YYYY-MM-DD")
+    autopostMode: str = Field("PROJECT_ONLY", description="Autopost behavior (e.g. PROJECT_ONLY)")
+    isPaused: bool = Field(False, description="Whether the rule is paused")
 
 
 class RecurringRule(RecurringRuleIn):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "ruleId": "rec_abcdef12",
+            "name": "Internet bill",
+            "amount": -25000,
+            "currency": "CLP",
+            "categoryId": "cat_utilities",
+            "cadence": "MONTHLY",
+            "dayOfMonth": 15,
+            "startDate": "2025-01-01",
+            "endDate": None,
+            "autopostMode": "PROJECT_ONLY",
+            "isPaused": False,
+            "createdAt": "2025-01-01T00:00:00Z",
+            "updatedAt": "2026-01-15T00:00:00Z"
+        }
+    })
+
     ruleId: str
     createdAt: str | None = None
     updatedAt: str | None = None
 
 
+class RecurringRulePatch(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "amount": -27000,
+            "dayOfMonth": 12,
+            "isPaused": True
+        }
+    })
+
+    name: Optional[str] = Field(None, description="Updated name")
+    amount: Optional[int] = Field(None, description="Updated amount")
+    currency: Optional[str] = Field(None, description="Updated currency code")
+    categoryId: Optional[str] = Field(None, description="Updated category")
+    cadence: Optional[str] = Field(default=None, pattern="^(MONTHLY|WEEKLY)$", description="Updated cadence")
+    dayOfMonth: Optional[int] = Field(None, description="Updated day of month")
+    startDate: Optional[str] = Field(None, description="Updated start date")
+    endDate: Optional[str] = Field(None, description="Updated end date")
+    autopostMode: Optional[str] = Field(None, description="Updated autopost behavior")
+    isPaused: Optional[bool] = Field(None, description="Pause/unpause the rule")
+
+
 class RecurringToggle(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "ruleId": "rec_abcdef12",
+            "isPaused": True,
+            "endDate": None,
+            "updatedAt": "2026-02-05T10:00:00Z"
+        }
+    })
+
     ruleId: str
     isPaused: bool
     endDate: str | None = None
@@ -67,56 +129,77 @@ def _public_toggle(item: dict) -> RecurringToggle:
     )
 
 
-@router.get("", response_model=List[RecurringRule])
+@router.get(
+    "",
+    response_model=List[RecurringRule],
+    summary="List recurring rules",
+    description="Return recurring rules (subscriptions/bills) for the authenticated user."
+)
 def api_list_recurring(current_user=Depends(get_current_user), db: DB = Depends(get_db)):
     items = list_recurring_rules(db, current_user["user_id"])
     return [_public_rule(i) for i in items]
 
 
-@router.post("", response_model=RecurringRule)
+@router.post(
+    "",
+    response_model=RecurringRule,
+    summary="Create recurring rule",
+    description="Create a recurring bill or income rule."
+)
 def api_create_recurring(payload: RecurringRuleIn, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
-    rule_id = f"rec_{uuid.uuid4().hex[:8]}"
-    item = {
-        "PK": f"USER#{current_user['user_id']}",
-        "SK": f"REC#{rule_id}",
-        "entityType": "RecurringRule",
-        "ruleId": rule_id,
-        **payload.model_dump(),
-        "createdAt": _now_iso(),
-        "updatedAt": _now_iso(),
-    }
-    db.put(item)
+    item = db.create_recurring(current_user["user_id"], payload.model_dump())
     return _public_rule(item)
 
 
-@router.patch("/{rule_id}", response_model=RecurringRule)
-def api_update_recurring(rule_id: str, payload: RecurringRuleIn, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
-    updated = db.update(f"USER#{current_user['user_id']}", f"REC#{rule_id}", {**payload.model_dump(), "updatedAt": _now_iso()})
+@router.patch(
+    "/{rule_id}",
+    response_model=RecurringRule,
+    summary="Update recurring rule",
+    description="Update fields on a recurring rule."
+)
+def api_update_recurring(rule_id: str, payload: RecurringRulePatch, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
+    updates = payload.model_dump(exclude_none=True)
+    updated = db.update_recurring(current_user["user_id"], rule_id, updates)
     if not updated:
         raise HTTPException(404, "Recurring rule not found")
     return _public_rule(updated)
 
 
-@router.post("/{rule_id}/pause", response_model=RecurringToggle)
+@router.post(
+    "/{rule_id}/pause",
+    response_model=RecurringToggle,
+    summary="Pause recurring rule",
+    description="Pause a recurring rule to stop future postings."
+)
 def api_pause_recurring(rule_id: str, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
-    updated = db.update(f"USER#{current_user['user_id']}", f"REC#{rule_id}", {"isPaused": True, "updatedAt": _now_iso()})
+    updated = db.update_recurring(current_user["user_id"], rule_id, {"isPaused": True})
     if not updated:
         raise HTTPException(404, "Recurring rule not found")
     return _public_toggle(updated)
 
 
-@router.post("/{rule_id}/resume", response_model=RecurringToggle)
+@router.post(
+    "/{rule_id}/resume",
+    response_model=RecurringToggle,
+    summary="Resume recurring rule",
+    description="Resume a paused recurring rule."
+)
 def api_resume_recurring(rule_id: str, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
-    updated = db.update(f"USER#{current_user['user_id']}", f"REC#{rule_id}", {"isPaused": False, "updatedAt": _now_iso()})
+    updated = db.update_recurring(current_user["user_id"], rule_id, {"isPaused": False})
     if not updated:
         raise HTTPException(404, "Recurring rule not found")
     return _public_toggle(updated)
 
 
-@router.post("/{rule_id}/stop", response_model=RecurringToggle)
+@router.post(
+    "/{rule_id}/stop",
+    response_model=RecurringToggle,
+    summary="Stop recurring rule",
+    description="Stop a recurring rule and set its end date to today."
+)
 def api_stop_recurring(rule_id: str, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
     today = datetime.now(timezone.utc).date().isoformat()
-    updated = db.update(f"USER#{current_user['user_id']}", f"REC#{rule_id}", {"endDate": today, "isPaused": True, "updatedAt": _now_iso()})
+    updated = db.update_recurring(current_user["user_id"], rule_id, {"endDate": today, "isPaused": True})
     if not updated:
         raise HTTPException(404, "Recurring rule not found")
     return _public_toggle(updated)

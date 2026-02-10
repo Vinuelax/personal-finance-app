@@ -3,7 +3,7 @@
 export interface TransactionSplit {
   id: string
   label: string
-  amount: number
+  amount: number | null
   categoryId: string | null
 }
 
@@ -28,6 +28,40 @@ export interface Category {
   monthlyBudget: number
   currentMonthSpent: number
   rollover: boolean
+  rolloverTargetCategoryId?: string | null
+}
+
+export interface Budget {
+  month: string // YYYY-MM
+  categoryId: string
+  limit: number
+  rollover: boolean
+  rolloverTargetCategoryId?: string | null
+  currency?: string | null
+  copiedFromMonth?: string | null
+  purpose?: string | null
+  carryForwardEnabled?: boolean
+  isTerminal?: boolean
+  objectiveId?: string | null
+}
+
+export interface ObjectiveMonthPlan {
+  month: string
+  amount: number
+  kind: 'SPEND' | 'SAVE'
+  isLastMonth: boolean
+}
+
+export interface Objective {
+  objectiveId: string
+  name: string
+  categoryId: string
+  currency?: string | null
+  totalAmount?: number | null
+  status: 'ACTIVE' | 'COMPLETED' | 'ARCHIVED'
+  plans: ObjectiveMonthPlan[]
+  createdAt?: string | null
+  updatedAt?: string | null
 }
 
 export interface RecurringPayment {

@@ -6,26 +6,44 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
+import logging
+
+logger = logging.getLogger("auth")
 from utils.deps import create_access_token, get_db
 from utils.db import DB
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 DEFAULT_USER_ID = os.getenv("DEFAULT_USER_ID", "u_001")
+DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "CLP")
 PBKDF2_ITERATIONS = int(os.getenv("AUTH_PBKDF2_ITERATIONS", "100000"))
 PBKDF2_ALGO = "PBKDF2-HMAC-SHA256"
 
 
 class AuthRequest(BaseModel):
-    email: str
-    password: str
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "email": "user@example.com",
+            "password": "s3cretpass"
+        }
+    })
+
+    email: str = Field(..., description="User email (case-insensitive)")
+    password: str = Field(..., description="Plain-text password for login or signup")
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+            "token_type": "bearer"
+        }
+    })
+
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field("bearer", description="Token type (always 'bearer')")
 
 
 def _hash_password(password: str) -> str:
@@ -40,13 +58,11 @@ def _derive_password(password: str, salt: bytes, iterations: int = PBKDF2_ITERAT
 
 
 def _get_user_by_email(db: DB, email: str):
-    # Prefer GSI4 email index if present
-    matches = db.gsi_query(f"EMAIL#{email.lower()}", index="GSI4")
-    return matches[0] if matches else None
+    return db.get_user_by_email(email)
 
 
 def _get_user_record(db: DB, user_id: str):
-    return db.get_item(f"USER#{user_id}", f"USER#{user_id}")
+    return db.get_user(user_id)
 
 
 def _verify_password(password: str, user: dict) -> bool:
@@ -70,11 +86,6 @@ def _new_user_item(email: str, password: str) -> dict:
     iterations = PBKDF2_ITERATIONS
     now = datetime.now(timezone.utc).isoformat()
     return {
-        "PK": f"USER#{user_id}",
-        "SK": f"USER#{user_id}",
-        "GSI4PK": f"EMAIL#{email.lower()}",
-        "GSI4SK": f"USER#{user_id}",
-        "entityType": "User",
         "userId": user_id,
         "email": email,
         "passwordAlgo": PBKDF2_ALGO,
@@ -83,11 +94,18 @@ def _new_user_item(email: str, password: str) -> dict:
         "passwordHash": _derive_password(password, salt, iterations),
         "createdAt": now,
         "updatedAt": now,
+        "currency": DEFAULT_CURRENCY,
     }
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="Log in",
+    description="Authenticate a user and return a bearer token."
+)
 def login(body: AuthRequest, db: DB = Depends(get_db)):
+    logger.info("Login attempt for email=%s", body.email)
     if not body.email or not body.password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing credentials")
 
@@ -97,7 +115,19 @@ def login(body: AuthRequest, db: DB = Depends(get_db)):
         legacy = _get_user_record(db, DEFAULT_USER_ID)
         if legacy and legacy.get("email") == body.email:
             user = legacy
-    if not user or not _verify_password(body.password, user):
+    if not user:
+        logger.warning("Login failed: user not found for email=%s", body.email)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    valid = _verify_password(body.password, user)
+    logger.info(
+        "Password verify email=%s user_id=%s algo=%s ok=%s",
+        body.email,
+        user.get("userId"),
+        user.get("passwordAlgo"),
+        valid,
+    )
+    if not valid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     token = create_access_token(
@@ -109,10 +139,16 @@ def login(body: AuthRequest, db: DB = Depends(get_db)):
             "pwd_iter": user.get("passwordIterations"),
         }
     )
+    logger.info("Login success email=%s user_id=%s", body.email, user.get("userId"))
     return TokenResponse(access_token=token)
 
 
-@router.post("/signup", response_model=TokenResponse)
+@router.post(
+    "/signup",
+    response_model=TokenResponse,
+    summary="Sign up",
+    description="Create a new user account and return a bearer token."
+)
 def signup(body: AuthRequest, db: DB = Depends(get_db)):
     if not body.email or not body.password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing credentials")
@@ -126,7 +162,7 @@ def signup(body: AuthRequest, db: DB = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists")
 
     user_item = _new_user_item(body.email, body.password)
-    db.put(user_item)
+    db.upsert_user(user_item)
 
     token = create_access_token(
         {

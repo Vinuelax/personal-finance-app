@@ -52,10 +52,11 @@ const CURRENCIES = [
   { code: "JPY", symbol: "¥", name: "Japanese Yen" },
   { code: "CAD", symbol: "C$", name: "Canadian Dollar" },
   { code: "AUD", symbol: "A$", name: "Australian Dollar" },
+  { code: "CLP", symbol: "CLP$", name: "Chilean Peso" },
 ]
 
 export default function SettingsPage() {
-  const { user, updateUser, currency, setCurrency, clearAllData } = useData()
+  const { user, updateUser, currency, currencyCode, setCurrency, clearAllData } = useData()
   const router = useRouter()
   const [theme, setTheme] = useState<"light" | "dark" | "system">("system")
   const [notifications, setNotifications] = useState({
@@ -193,13 +194,13 @@ export default function SettingsPage() {
                   <p className="text-sm text-muted-foreground">Set your default currency</p>
                 </div>
               </div>
-              <Select value={currency} onValueChange={setCurrency}>
+              <Select value={currencyCode} onValueChange={setCurrency}>
                 <SelectTrigger className="w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {CURRENCIES.map((c) => (
-                    <SelectItem key={c.code} value={c.symbol}>
+                    <SelectItem key={c.code} value={c.code}>
                       {c.symbol} {c.code}
                     </SelectItem>
                   ))}

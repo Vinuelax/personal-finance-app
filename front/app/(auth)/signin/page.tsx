@@ -10,11 +10,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Wallet, Eye, EyeOff, ArrowLeft } from 'lucide-react'
+import { login } from '@/lib/api'
+import { useData } from '@/lib/data-context'
 
 export default function SignInPage() {
   const router = useRouter()
+  const { setAuthToken, refreshFromBackend } = useData()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -22,13 +26,21 @@ export default function SignInPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
     setIsLoading(true)
     
-    // Simulate authentication
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // For demo purposes, go to home
-    router.push('/')
+    try {
+      const token = await login(formData.email, formData.password)
+      setAuthToken(token)
+      await refreshFromBackend(token)
+      router.push('/')
+    } catch (err) {
+      console.error(err)
+      const message = err instanceof Error ? err.message : 'Unable to sign in. Please try again.'
+      setError(message)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -111,6 +123,10 @@ export default function SignInPage() {
             <Button type="submit" className="w-full" size="lg" disabled={isLoading}>
               {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
+
+            {error && (
+              <p className="text-sm text-red-500">{error}</p>
+            )}
           </form>
 
           <div className="mt-6 text-center text-sm">

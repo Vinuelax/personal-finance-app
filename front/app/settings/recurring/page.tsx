@@ -25,7 +25,6 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Calendar, Pause, Play, StopCircle, Plus } from 'lucide-react'
 import type { RecurringPayment } from '@/lib/types'
-import { DataProvider } from '@/lib/data-context'
 import { cn } from '@/lib/utils'
 
 const cadenceLabels: Record<RecurringPayment['cadence'], string> = {
@@ -263,9 +262,5 @@ function RecurringContent() {
 }
 
 export default function RecurringPage() {
-  return (
-    <DataProvider>
-      <RecurringContent />
-    </DataProvider>
-  )
+  return <RecurringContent />
 }

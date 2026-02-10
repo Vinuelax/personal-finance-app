@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { AppShell } from '@/components/app-shell'
-import { DataProvider, useData } from '@/lib/data-context'
+import { useData } from '@/lib/data-context'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -24,22 +24,20 @@ import {
   CheckCircle2,
   XCircle,
   Plus,
-  TrendingDown
+  TrendingDown,
+  TrendingUp
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Transaction, BillInstance, RecurringPayment } from '@/lib/types'
 import { AddTransactionSheet } from '@/components/add-transaction-sheet'
+import { fetchCalendar, type CalendarDaySummary } from '@/lib/api'
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(Math.abs(amount))
+const useCurrencyFormatter = () => {
+  const { formatCurrency } = useData()
+  return formatCurrency
 }
 
-const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
@@ -52,15 +50,33 @@ interface DayData {
   isToday: boolean
   transactions: Transaction[]
   bills: (BillInstance & { name: string })[]
-  totalSpent: number
+  totalExpense: number
+  totalIncome: number
 }
 
 function CalendarContent() {
-  const { transactions, billInstances, recurringPayments } = useData()
+  const formatCurrency = useCurrencyFormatter()
+  const { transactions, billInstances, recurringPayments, authToken } = useData()
   const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 1)) // January 2026
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null)
   const [showProjected, setShowProjected] = useState(true)
   const [showAddTransaction, setShowAddTransaction] = useState(false)
+  const [apiDays, setApiDays] = useState<Record<string, CalendarDaySummary>>({})
+
+  useEffect(() => {
+    if (!authToken) {
+      setApiDays({})
+      return
+    }
+    const monthStr = currentDate.toISOString().slice(0, 7)
+    fetchCalendar(authToken, monthStr)
+      .then(res => {
+        const map: Record<string, CalendarDaySummary> = {}
+        res.days.forEach(d => { map[d.date] = d })
+        setApiDays(map)
+      })
+      .catch(() => setApiDays({}))
+  }, [authToken, currentDate])
 
   // Get bills with names
   const billsWithNames = useMemo(() => 
@@ -78,7 +94,7 @@ function CalendarContent() {
     const firstDay = new Date(year, month, 1)
     const lastDay = new Date(year, month + 1, 0)
     const daysInMonth = lastDay.getDate()
-    const startDayOfWeek = firstDay.getDay()
+    const startDayOfWeek = (firstDay.getDay() + 6) % 7  // make Monday = 0
     
     const days: DayData[] = []
     const today = new Date()
@@ -89,16 +105,20 @@ function CalendarContent() {
     for (let i = startDayOfWeek - 1; i >= 0; i--) {
       const date = new Date(year, month - 1, prevMonthLastDay - i)
       const dateStr = date.toISOString().split('T')[0]
+      const api = apiDays[dateStr]
       days.push({
         date,
         dateStr,
         isCurrentMonth: false,
         isToday: false,
-        transactions: transactions.filter(t => t.date === dateStr),
+        transactions: api ? api.transactions : transactions.filter(t => t.date === dateStr),
         bills: billsWithNames.filter(b => b.dueDate === dateStr),
-        totalSpent: transactions
+        totalExpense: api ? api.expense / 100 : transactions
           .filter(t => t.date === dateStr && t.amount < 0)
-          .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+          .reduce((sum, t) => sum + Math.abs(t.amount), 0),
+        totalIncome: api ? api.income / 100 : transactions
+          .filter(t => t.date === dateStr && t.amount > 0)
+          .reduce((sum, t) => sum + t.amount, 0),
       })
     }
 
@@ -106,16 +126,20 @@ function CalendarContent() {
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day)
       const dateStr = date.toISOString().split('T')[0]
+      const api = apiDays[dateStr]
       days.push({
         date,
         dateStr,
         isCurrentMonth: true,
         isToday: date.getTime() === today.getTime(),
-        transactions: transactions.filter(t => t.date === dateStr),
+        transactions: api ? api.transactions : transactions.filter(t => t.date === dateStr),
         bills: billsWithNames.filter(b => b.dueDate === dateStr),
-        totalSpent: transactions
+        totalExpense: api ? api.expense / 100 : transactions
           .filter(t => t.date === dateStr && t.amount < 0)
-          .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+          .reduce((sum, t) => sum + Math.abs(t.amount), 0),
+        totalIncome: api ? api.income / 100 : transactions
+          .filter(t => t.date === dateStr && t.amount > 0)
+          .reduce((sum, t) => sum + t.amount, 0),
       })
     }
 
@@ -124,16 +148,20 @@ function CalendarContent() {
     for (let day = 1; day <= remainingDays; day++) {
       const date = new Date(year, month + 1, day)
       const dateStr = date.toISOString().split('T')[0]
+      const api = apiDays[dateStr]
       days.push({
         date,
         dateStr,
         isCurrentMonth: false,
         isToday: false,
-        transactions: transactions.filter(t => t.date === dateStr),
+        transactions: api ? api.transactions : transactions.filter(t => t.date === dateStr),
         bills: billsWithNames.filter(b => b.dueDate === dateStr),
-        totalSpent: transactions
+        totalExpense: api ? api.expense / 100 : transactions
           .filter(t => t.date === dateStr && t.amount < 0)
-          .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+          .reduce((sum, t) => sum + Math.abs(t.amount), 0),
+        totalIncome: api ? api.income / 100 : transactions
+          .filter(t => t.date === dateStr && t.amount > 0)
+          .reduce((sum, t) => sum + t.amount, 0),
       })
     }
 
@@ -272,12 +300,20 @@ function CalendarContent() {
                   
                   {/* Indicators */}
                   <div className="absolute bottom-1 left-1 right-1 flex flex-col gap-0.5">
-                    {day.totalSpent > 0 && (
-                      <div className="flex items-center gap-0.5">
-                        <TrendingDown className="h-2.5 w-2.5 text-muted-foreground" />
-                        <span className="text-[10px] text-muted-foreground truncate">
-                          {formatCurrency(day.totalSpent)}
-                        </span>
+                    {(day.totalExpense > 0 || day.totalIncome > 0) && (
+                      <div className="flex items-center gap-1 text-[10px]">
+                        {day.totalExpense > 0 && (
+                          <div className="flex items-center gap-0.5 text-negative">
+                            <TrendingDown className="h-2.5 w-2.5" />
+                            <span className="truncate">{formatCurrency(day.totalExpense)}</span>
+                          </div>
+                        )}
+                        {day.totalIncome > 0 && (
+                          <div className="flex items-center gap-0.5 text-positive">
+                            <TrendingUp className="h-2.5 w-2.5" />
+                            <span className="truncate">+{formatCurrency(day.totalIncome)}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                     {hasBills && (
@@ -295,14 +331,18 @@ function CalendarContent() {
           </div>
         </div>
 
-        {/* Legend */}
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <TrendingDown className="h-3 w-3" />
-            <span>Spending</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Clock className="h-3 w-3 text-warning" />
+      {/* Legend */}
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1">
+          <TrendingDown className="h-3 w-3 text-negative" />
+          <span>Expense</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <TrendingUp className="h-3 w-3 text-positive" />
+          <span>Income</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Clock className="h-3 w-3 text-warning" />
             <span>Bills due</span>
           </div>
         </div>
@@ -325,6 +365,18 @@ function CalendarContent() {
           </SheetHeader>
 
           <div className="space-y-6 overflow-y-auto pb-20">
+            {selectedDay && (
+              <div className="flex items-center gap-4 bg-secondary/60 rounded-lg p-3">
+                <div className="flex items-center gap-2 text-negative">
+                  <TrendingDown className="h-4 w-4" />
+                  <span className="text-sm font-medium">-{formatCurrency(selectedDay.totalExpense)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-positive">
+                  <TrendingUp className="h-4 w-4" />
+                  <span className="text-sm font-medium">+{formatCurrency(selectedDay.totalIncome)}</span>
+                </div>
+              </div>
+            )}
             {/* Transactions */}
             {selectedDay?.transactions && selectedDay.transactions.length > 0 && (
               <div>
@@ -343,7 +395,7 @@ function CalendarContent() {
                         "font-medium",
                         txn.amount > 0 ? "text-positive" : "text-foreground"
                       )}>
-                        {txn.amount > 0 ? '+' : '-'}{formatCurrency(txn.amount)}
+                        {txn.amount > 0 ? '+' : '-'}{formatCurrency(Math.abs(txn.amount))}
                       </p>
                     </div>
                   ))}
@@ -408,9 +460,5 @@ function CalendarContent() {
 }
 
 export default function CalendarPage() {
-  return (
-    <DataProvider>
-      <CalendarContent />
-    </DataProvider>
-  )
+  return <CalendarContent />
 }

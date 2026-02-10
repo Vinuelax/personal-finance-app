@@ -10,14 +10,15 @@ import type {
 
 // Demo categories with budgets
 export const demoCategories: Category[] = [
-  { id: 'cat-1', name: 'Groceries', icon: 'shopping-cart', color: '#4ade80', monthlyBudget: 600, currentMonthSpent: 423.50, rollover: false },
-  { id: 'cat-2', name: 'Dining Out', icon: 'utensils', color: '#f97316', monthlyBudget: 300, currentMonthSpent: 287.20, rollover: false },
-  { id: 'cat-3', name: 'Transport', icon: 'car', color: '#3b82f6', monthlyBudget: 200, currentMonthSpent: 145.00, rollover: false },
-  { id: 'cat-4', name: 'Entertainment', icon: 'film', color: '#a855f7', monthlyBudget: 150, currentMonthSpent: 89.99, rollover: false },
-  { id: 'cat-5', name: 'Utilities', icon: 'zap', color: '#eab308', monthlyBudget: 250, currentMonthSpent: 187.34, rollover: false },
-  { id: 'cat-6', name: 'Shopping', icon: 'shopping-bag', color: '#ec4899', monthlyBudget: 200, currentMonthSpent: 245.00, rollover: false },
-  { id: 'cat-7', name: 'Health', icon: 'heart', color: '#ef4444', monthlyBudget: 100, currentMonthSpent: 45.00, rollover: false },
-  { id: 'cat-8', name: 'Subscriptions', icon: 'repeat', color: '#06b6d4', monthlyBudget: 100, currentMonthSpent: 78.97, rollover: false },
+  { id: 'cat-1', name: 'Groceries', icon: 'shopping-cart', color: '#4ade80', monthlyBudget: 600, currentMonthSpent: 423.50, rollover: false, rolloverTargetCategoryId: null },
+  { id: 'cat-2', name: 'Dining Out', icon: 'utensils', color: '#f97316', monthlyBudget: 300, currentMonthSpent: 287.20, rollover: false, rolloverTargetCategoryId: null },
+  { id: 'cat-3', name: 'Transport', icon: 'car', color: '#3b82f6', monthlyBudget: 200, currentMonthSpent: 145.00, rollover: false, rolloverTargetCategoryId: null },
+  { id: 'cat-4', name: 'Entertainment', icon: 'film', color: '#a855f7', monthlyBudget: 150, currentMonthSpent: 89.99, rollover: false, rolloverTargetCategoryId: null },
+  { id: 'cat-5', name: 'Utilities', icon: 'zap', color: '#eab308', monthlyBudget: 250, currentMonthSpent: 187.34, rollover: false, rolloverTargetCategoryId: null },
+  { id: 'cat-6', name: 'Shopping', icon: 'shopping-bag', color: '#ec4899', monthlyBudget: 200, currentMonthSpent: 245.00, rollover: false, rolloverTargetCategoryId: null },
+  { id: 'cat-7', name: 'Health', icon: 'heart', color: '#ef4444', monthlyBudget: 100, currentMonthSpent: 45.00, rollover: false, rolloverTargetCategoryId: null },
+  { id: 'cat-8', name: 'Subscriptions', icon: 'repeat', color: '#06b6d4', monthlyBudget: 100, currentMonthSpent: 78.97, rollover: false, rolloverTargetCategoryId: 'cat-9' },
+  { id: 'cat-9', name: 'Investments', icon: 'trending-up', color: '#0ea5e9', monthlyBudget: 500, currentMonthSpent: 0, rollover: true, rolloverTargetCategoryId: null },
 ]
 
 // Demo transactions

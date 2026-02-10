@@ -17,6 +17,8 @@ import {
   Receipt,
   Calendar,
   TrendingUp,
+  PiggyBank,
+  Target,
   Settings,
   Plus,
   Menu,
@@ -37,8 +39,10 @@ import { AddTransactionSheet } from '@/components/add-transaction-sheet'
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/transactions', label: 'Transactions', icon: Receipt },
+  { href: '/budgets', label: 'Budgets', icon: PiggyBank },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/investments', label: 'Investments', icon: TrendingUp },
+  { href: '/objectives', label: 'Objectives', icon: Target },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 

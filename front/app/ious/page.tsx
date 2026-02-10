@@ -4,7 +4,7 @@ import React from "react"
 
 import { useState } from 'react'
 import { AppShell } from '@/components/app-shell'
-import { DataProvider, useData } from '@/lib/data-context'
+import { useData } from '@/lib/data-context'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -32,12 +32,9 @@ import {
 import { cn } from '@/lib/utils'
 import type { IOU } from '@/lib/types'
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(Math.abs(amount))
+const useCurrencyFormatter = () => {
+  const { formatCurrency } = useData()
+  return formatCurrency
 }
 
 // IOU Detail Sheet
@@ -48,6 +45,7 @@ interface IOUDetailProps {
 }
 
 function IOUDetail({ iou, onClose, onSettle }: IOUDetailProps) {
+  const formatCurrency = useCurrencyFormatter()
   if (!iou) return null
 
   const isOwedToMe = iou.netBalance > 0
@@ -77,7 +75,7 @@ function IOUDetail({ iou, onClose, onSettle }: IOUDetailProps) {
               "text-4xl font-bold",
               isOwedToMe ? "text-positive" : "text-negative"
             )}>
-              {isOwedToMe ? '+' : '-'}{formatCurrency(iou.netBalance)}
+              {isOwedToMe ? '+' : '-'}{formatCurrency(Math.abs(iou.netBalance))}
             </p>
             <p className="text-sm text-muted-foreground mt-1">
               {isOwedToMe ? 'They owe you' : 'You owe them'}
@@ -129,7 +127,7 @@ function IOUDetail({ iou, onClose, onSettle }: IOUDetailProps) {
                     "font-medium",
                     item.amount > 0 ? "text-positive" : "text-negative"
                   )}>
-                    {item.amount > 0 ? '+' : '-'}{formatCurrency(item.amount)}
+                    {item.amount > 0 ? '+' : '-'}{formatCurrency(Math.abs(item.amount))}
                   </p>
                 </div>
               ))}
@@ -315,6 +313,7 @@ function AddIOUSheet({ open, onClose, onAdd }: AddIOUSheetProps) {
 }
 
 function IOUsContent() {
+  const formatCurrency = useCurrencyFormatter()
   const { ious, addIOU, settleIOU } = useData()
   const [selectedIOU, setSelectedIOU] = useState<IOU | null>(null)
   const [showAddIOU, setShowAddIOU] = useState(false)
@@ -412,7 +411,7 @@ function IOUsContent() {
                         "font-medium",
                         iou.netBalance > 0 ? "text-positive" : "text-negative"
                       )}>
-                        {iou.netBalance > 0 ? '+' : '-'}{formatCurrency(iou.netBalance)}
+                        {iou.netBalance > 0 ? '+' : '-'}{formatCurrency(Math.abs(iou.netBalance))}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(iou.createdAt).toLocaleDateString('en-US', { 
@@ -454,7 +453,7 @@ function IOUsContent() {
                       </Badge>
                     </div>
                     <p className="font-medium text-muted-foreground">
-                      {formatCurrency(iou.netBalance)}
+                      {formatCurrency(Math.abs(iou.netBalance))}
                     </p>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </CardContent>
@@ -494,9 +493,5 @@ function IOUsContent() {
 }
 
 export default function IOUsPage() {
-  return (
-    <DataProvider>
-      <IOUsContent />
-    </DataProvider>
-  )
+  return <IOUsContent />
 }

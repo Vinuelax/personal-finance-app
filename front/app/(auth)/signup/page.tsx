@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Wallet, Eye, EyeOff, ArrowLeft, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { signup } from '@/lib/api'
+import { useData } from '@/lib/data-context'
 
 const passwordRequirements = [
   { label: 'At least 8 characters', check: (p: string) => p.length >= 8 },
@@ -20,8 +22,10 @@ const passwordRequirements = [
 
 export default function SignUpPage() {
   const router = useRouter()
+  const { setAuthToken, refreshFromBackend } = useData()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -30,13 +34,20 @@ export default function SignUpPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
     setIsLoading(true)
     
-    // Simulate account creation
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Go to onboarding
-    router.push('/onboarding')
+    try {
+      const token = await signup(formData.email, formData.password)
+      setAuthToken(token)
+      await refreshFromBackend(token)
+      router.push('/onboarding')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to create account'
+      setError(message)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const allRequirementsMet = passwordRequirements.every(req => req.check(formData.password))
@@ -158,6 +169,9 @@ export default function SignUpPage() {
             >
               {isLoading ? 'Creating account...' : 'Create Account'}
             </Button>
+            {error && (
+              <p className="text-sm text-negative text-center">{error}</p>
+            )}
 
             <p className="text-xs text-muted-foreground text-center">
               By creating an account, you agree to our{' '}

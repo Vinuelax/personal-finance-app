@@ -38,6 +38,9 @@ class SyncASGIClient:
     def patch(self, url: str, **kwargs):
         return self.request("PATCH", url, **kwargs)
 
+    def put(self, url: str, **kwargs):
+        return self.request("PUT", url, **kwargs)
+
     def delete(self, url: str, **kwargs):
         return self.request("DELETE", url, **kwargs)
 

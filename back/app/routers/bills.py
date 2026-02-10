@@ -1,6 +1,6 @@
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime, timezone
 
 from utils.deps import get_db, get_current_user
@@ -10,22 +10,45 @@ router = APIRouter(tags=["bills"])
 
 
 class BillUpdate(BaseModel):
-    status: Optional[str] = None
-    amount: Optional[int] = None
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "status": "PAID",
+            "amount": -85000
+        }
+    })
+
+    status: Optional[str] = Field(None, description="New status (e.g. PROJECTED, DUE, PAID)")
+    amount: Optional[int] = Field(None, description="Updated amount in minor units")
 
 
 class BillOut(BaseModel):
-    billId: str
-    ruleId: str | None = None
-    name: str | None = None
-    dueDate: str | None = None
-    amount: int | None = None
-    currency: str | None = None
-    categoryId: str | None = None
-    status: str | None = None
-    linkedTxnId: str | None = None
-    createdAt: str | None = None
-    updatedAt: str | None = None
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "billId": "bill_0007",
+            "ruleId": "rec_util",
+            "name": "Utilities",
+            "dueDate": "2026-03-10",
+            "amount": -85000,
+            "currency": "CLP",
+            "categoryId": "cat_utilities",
+            "status": "PROJECTED",
+            "linkedTxnId": None,
+            "createdAt": "2026-01-20T00:00:00Z",
+            "updatedAt": "2026-01-20T00:00:00Z"
+        }
+    })
+
+    billId: str = Field(..., description="Bill instance identifier")
+    ruleId: str | None = Field(None, description="Origin recurring rule ID, if any")
+    name: str | None = Field(None, description="Bill name")
+    dueDate: str | None = Field(None, description="Due date YYYY-MM-DD")
+    amount: int | None = Field(None, description="Amount in minor units (negative for payables)")
+    currency: str | None = Field(None, description="ISO currency code")
+    categoryId: str | None = Field(None, description="Category ID")
+    status: str | None = Field(None, description="Bill status")
+    linkedTxnId: str | None = Field(None, description="Linked transaction ID")
+    createdAt: str | None = Field(None, description="Creation timestamp (ISO8601)")
+    updatedAt: str | None = Field(None, description="Last update timestamp (ISO8601)")
 
 
 def _now_iso() -> str:
@@ -48,7 +71,12 @@ def _public_bill(item: dict) -> BillOut:
     )
 
 
-@router.get("", response_model=List[BillOut])
+@router.get(
+    "",
+    response_model=List[BillOut],
+    summary="List bills",
+    description="List bill instances for the authenticated user, optionally filtered by date range or status."
+)
 def api_list_bills(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
@@ -60,16 +88,15 @@ def api_list_bills(
     return [_public_bill(i) for i in items]
 
 
-@router.patch("/{bill_id}", response_model=BillOut)
+@router.patch(
+    "/{bill_id}",
+    response_model=BillOut,
+    summary="Update bill",
+    description="Update bill amount or status."
+)
 def api_update_bill(bill_id: str, payload: BillUpdate, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
-    pk = f"USER#{current_user['user_id']}"
-    items = db.query(pk, begins_with="BILL#")
-    target = next((i for i in items if i.get("billId") == bill_id), None)
-    if not target:
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    updated = db.update_bill(current_user["user_id"], bill_id, updates)
+    if not updated:
         raise HTTPException(404, "Bill not found")
-    updated = db.update(
-        pk,
-        target["SK"],
-        {**{k: v for k, v in payload.model_dump().items() if v is not None}, "updatedAt": _now_iso()},
-    )
     return _public_bill(updated)

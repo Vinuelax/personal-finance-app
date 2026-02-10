@@ -37,6 +37,7 @@ import { Switch } from '@/components/ui/switch'
 import { 
   Search, 
   Filter, 
+  ChevronLeft,
   ChevronRight, 
   Tag,
   Pencil,
@@ -56,15 +57,11 @@ import {
   StopCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Transaction, TransactionSplit, Category } from '@/lib/types'
-import { DataProvider } from '@/lib/data-context'
+import type { Transaction, TransactionSplit, Category, Budget } from '@/lib/types'
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(Math.abs(amount))
+const useCurrencyFormatter = () => {
+  const { formatCurrency } = useData()
+  return formatCurrency
 }
 
 function formatDate(dateStr: string) {
@@ -84,8 +81,11 @@ interface TransactionRowProps {
 }
 
 function TransactionRow({ transaction, category, onSelect }: TransactionRowProps) {
+  const formatCurrency = useCurrencyFormatter()
   const isIncome = transaction.amount > 0
-  const isUncategorized = !transaction.category && !isIncome
+  const hasSplits = (transaction.splits?.length || 0) > 0
+  const splitHasCategory = transaction.splits?.some(s => s.categoryId) || false
+  const isUncategorized = !transaction.category && !isIncome && !splitHasCategory
 
   return (
     <button
@@ -102,6 +102,8 @@ function TransactionRow({ transaction, category, onSelect }: TransactionRowProps
       )}>
         {isUncategorized ? (
           <Tag className="h-4 w-4 text-warning" />
+        ) : hasSplits ? (
+          <Split className="h-4 w-4 text-primary" />
         ) : (
           <span className="text-lg">
             {category?.icon === 'shopping-cart' && '🛒'}
@@ -128,6 +130,11 @@ function TransactionRow({ transaction, category, onSelect }: TransactionRowProps
               Uncategorized
             </Badge>
           )}
+          {hasSplits && (
+            <Badge variant="outline" className="text-[10px] h-4 px-1">
+              Split
+            </Badge>
+          )}
         </div>
       </div>
       
@@ -136,7 +143,7 @@ function TransactionRow({ transaction, category, onSelect }: TransactionRowProps
           "font-medium text-sm",
           isIncome ? "text-positive" : "text-foreground"
         )}>
-          {isIncome ? '+' : '-'}{formatCurrency(transaction.amount)}
+          {isIncome ? '+' : '-'}{formatCurrency(Math.abs(transaction.amount))}
         </p>
         {transaction.source === 'manual' && (
           <p className="text-[10px] text-muted-foreground">Manual</p>
@@ -158,6 +165,7 @@ interface CategoryPickerProps {
 }
 
 function CategoryPicker({ open, onClose, categories, onSelect, currentCategoryId }: CategoryPickerProps) {
+  const formatCurrency = useCurrencyFormatter()
   return (
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent side="bottom" className="h-[70vh] rounded-t-3xl">
@@ -278,8 +286,16 @@ function SplitDialog({ open, onOpenChange, transaction, categories, onSave }: Sp
                   <Input
                     type="number"
                     inputMode="decimal"
-                    value={split.amount}
-                    onChange={(e) => updateSplit(split.id, { amount: parseFloat(e.target.value) })}
+                    value={split.amount ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      if (value === '') {
+                        updateSplit(split.id, { amount: null })
+                        return
+                      }
+                      const parsed = parseFloat(value)
+                      updateSplit(split.id, { amount: Number.isNaN(parsed) ? null : parsed })
+                    }}
                   />
                 </div>
                 <div className="space-y-1">
@@ -435,6 +451,7 @@ interface TransactionDetailProps {
 }
 
 function TransactionDetail({ transaction, categories, onClose, onUpdate, onDelete, onAttachReceipt, onCreateReceipt }: TransactionDetailProps) {
+  const formatCurrency = useCurrencyFormatter()
   const [showCategoryPicker, setShowCategoryPicker] = useState(false)
   const [showSplitDialog, setShowSplitDialog] = useState(false)
   const [showReceiptDialog, setShowReceiptDialog] = useState(false)
@@ -463,7 +480,7 @@ function TransactionDetail({ transaction, categories, onClose, onUpdate, onDelet
                 "text-4xl font-bold",
                 transaction.amount > 0 ? "text-positive" : "text-foreground"
               )}>
-                {transaction.amount > 0 ? '+' : '-'}{formatCurrency(transaction.amount)}
+                {transaction.amount > 0 ? '+' : '-'}{formatCurrency(Math.abs(transaction.amount))}
               </p>
               {transaction.splits && transaction.splits.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-2">
@@ -472,38 +489,79 @@ function TransactionDetail({ transaction, categories, onClose, onUpdate, onDelet
               )}
             </div>
 
-            {/* Category */}
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <button
-                onClick={() => setShowCategoryPicker(true)}
-                className="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-accent transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  {category ? (
-                    <>
-                      <span className="text-xl">
-                        {category.icon === 'shopping-cart' && '🛒'}
-                        {category.icon === 'utensils' && '🍽️'}
-                        {category.icon === 'car' && '🚗'}
-                        {category.icon === 'film' && '🎬'}
-                        {category.icon === 'zap' && '⚡'}
-                        {category.icon === 'shopping-bag' && '🛍️'}
-                        {category.icon === 'heart' && '❤️'}
-                        {category.icon === 'repeat' && '🔄'}
-                      </span>
-                      <span className="font-medium">{category.name}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Tag className="h-5 w-5 text-muted-foreground" />
-                      <span className="text-muted-foreground">No category</span>
-                    </>
-                  )}
+            {/* Category / Splits */}
+            {transaction.splits && transaction.splits.length > 0 ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Splits</Label>
+                  <Button variant="ghost" size="sm" onClick={() => setShowSplitDialog(true)}>
+                    <Split className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </button>
-            </div>
+                <div className="rounded-lg border divide-y bg-muted/30">
+                  {transaction.splits.map(split => {
+                    const splitCat = categories.find(c => c.id === split.categoryId)
+                    return (
+                      <div className="flex items-center justify-between p-3" key={split.id}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-xl">
+                            {splitCat?.icon === 'shopping-cart' && '🛒'}
+                            {splitCat?.icon === 'utensils' && '🍽️'}
+                            {splitCat?.icon === 'car' && '🚗'}
+                            {splitCat?.icon === 'film' && '🎬'}
+                            {splitCat?.icon === 'zap' && '⚡'}
+                            {splitCat?.icon === 'shopping-bag' && '🛍️'}
+                            {splitCat?.icon === 'heart' && '❤️'}
+                            {splitCat?.icon === 'repeat' && '🔄'}
+                            {!splitCat && '🏷️'}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate">{split.label}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {splitCat ? splitCat.name : 'No category'}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="font-medium">{formatCurrency(Math.abs(split.amount ?? 0))}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <button
+                  onClick={() => setShowCategoryPicker(true)}
+                  className="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-accent transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    {category ? (
+                      <>
+                        <span className="text-xl">
+                          {category.icon === 'shopping-cart' && '🛒'}
+                          {category.icon === 'utensils' && '🍽️'}
+                          {category.icon === 'car' && '🚗'}
+                          {category.icon === 'film' && '🎬'}
+                          {category.icon === 'zap' && '⚡'}
+                          {category.icon === 'shopping-bag' && '🛍️'}
+                          {category.icon === 'heart' && '❤️'}
+                          {category.icon === 'repeat' && '🔄'}
+                        </span>
+                        <span className="font-medium">{category.name}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Tag className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-muted-foreground">No category</span>
+                      </>
+                    )}
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
+            )}
 
             {/* Notes */}
             <div className="space-y-2">
@@ -572,7 +630,10 @@ function TransactionDetail({ transaction, categories, onClose, onUpdate, onDelet
         transaction={transaction}
         categories={categories}
         onSave={(splits) => {
-          onUpdate(transaction.id, { splits })
+          const newCategory = splits.length > 1
+            ? null
+            : (splits[0]?.categoryId ?? transaction.category ?? null)
+          onUpdate(transaction.id, { splits, category: newCategory })
           toast({ title: 'Splits updated' })
         }}
       />
@@ -598,28 +659,82 @@ interface BudgetEditDialogProps {
   open: boolean
   onClose: () => void
   category: Category | null
-  onSave: (id: string, updates: Partial<Category>) => void
+  month: string
+  budgetLimit: number
+  budgetEntry?: Budget | null
+  onSaveCategory: (id: string, updates: Partial<Category>) => void
+  onSaveBudget: (month: string, categoryId: string, data: { limit: number; rollover?: boolean; rolloverTargetCategoryId?: string | null; purpose?: string | null; carryForwardEnabled?: boolean; isTerminal?: boolean; applyToFuture?: boolean }) => void | Promise<void>
+  onDeleteBudget: (categoryId: string, scope: 'this_month' | 'from_month' | 'all', month: string) => Promise<void>
+  categories: Category[]
 }
 
-function BudgetEditDialog({ open, onClose, category, onSave }: BudgetEditDialogProps) {
-  const [budget, setBudget] = useState(category?.monthlyBudget?.toString() || '')
+function BudgetEditDialog({ open, onClose, category, month, budgetLimit, budgetEntry, onSaveCategory, onSaveBudget, onDeleteBudget, categories }: BudgetEditDialogProps) {
+  const [budget, setBudget] = useState(budgetLimit !== undefined ? budgetLimit.toString() : '')
   const [rollover, setRollover] = useState(category?.rollover || false)
+  const [rolloverTarget, setRolloverTarget] = useState<string>(category?.rolloverTargetCategoryId || 'none')
+  const [purpose, setPurpose] = useState<string>('')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [onlyThisMonth, setOnlyThisMonth] = useState(false)
+  const [lastMonth, setLastMonth] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [deleteScope, setDeleteScope] = useState<'this_month' | 'from_month' | 'all'>('this_month')
 
-  const handleSave = () => {
-    if (category && budget) {
-      onSave(category.id, { 
-        monthlyBudget: parseFloat(budget),
-        rollover 
+  const handleSave = async () => {
+    if (!category || !budget) return
+    setIsSaving(true)
+    const limit = parseFloat(budget)
+    const carryForwardEnabled = !(onlyThisMonth || lastMonth)
+    try {
+      await onSaveBudget(month, category.id, {
+        limit,
+        rollover,
+        rolloverTargetCategoryId: rollover ? (rolloverTarget === 'none' ? null : rolloverTarget) : null,
+        purpose: purpose || null,
+        carryForwardEnabled,
+        isTerminal: lastMonth,
+        applyToFuture: !onlyThisMonth && !lastMonth,
       })
+    } finally {
+      setIsSaving(false)
+    }
+    onSaveCategory(category.id, { 
+      rollover,
+      rolloverTargetCategoryId: rollover ? (rolloverTarget === 'none' ? null : rolloverTarget) : null,
+    })
+    onClose()
+  }
+
+  const handleDelete = async () => {
+    if (!category) return
+    setIsSaving(true)
+    try {
+      await onDeleteBudget(category.id, deleteScope, month)
       onClose()
+    } finally {
+      setIsSaving(false)
     }
   }
 
   // Update state when category changes
-  if (category && budget === '' && category.monthlyBudget) {
-    setBudget(category.monthlyBudget.toString())
-    setRollover(category.rollover)
-  }
+  useEffect(() => {
+    if (category) {
+      setBudget(budgetLimit !== undefined ? budgetLimit.toString() : '')
+      setRollover(category.rollover)
+      setRolloverTarget(category.rolloverTargetCategoryId || 'none')
+      setPurpose(budgetEntry?.purpose || '')
+      setOnlyThisMonth((budgetEntry?.carryForwardEnabled ?? true) === false && !Boolean(budgetEntry?.isTerminal))
+      setLastMonth(Boolean(budgetEntry?.isTerminal))
+      setAdvancedOpen(false)
+    } else {
+      setBudget('')
+      setRollover(false)
+      setRolloverTarget('none')
+      setPurpose('')
+      setOnlyThisMonth(false)
+      setLastMonth(false)
+      setAdvancedOpen(false)
+    }
+  }, [category, budgetLimit, budgetEntry])
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { onClose(); setBudget('') } }}>
@@ -645,6 +760,57 @@ function BudgetEditDialog({ open, onClose, category, onSave }: BudgetEditDialogP
               />
             </div>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="purpose">Purpose (optional)</Label>
+            <Input
+              id="purpose"
+              placeholder="e.g., Ski trip installments"
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-start bg-transparent"
+            onClick={() => setAdvancedOpen(prev => !prev)}
+          >
+            {advancedOpen ? 'Hide advanced options' : 'Advanced options'}
+          </Button>
+          {advancedOpen && (
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Only this month</Label>
+                  <p className="text-xs text-muted-foreground">Future months won&apos;t inherit this budget.</p>
+                </div>
+                <Switch
+                  checked={onlyThisMonth}
+                  onCheckedChange={(checked) => {
+                    setOnlyThisMonth(checked)
+                    if (checked) {
+                      setLastMonth(false)
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Last month</Label>
+                  <p className="text-xs text-muted-foreground">This entry ends the timeline after this month.</p>
+                </div>
+                <Switch
+                  checked={lastMonth}
+                  onCheckedChange={(checked) => {
+                    setLastMonth(checked)
+                    if (checked) {
+                      setOnlyThisMonth(false)
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div>
               <Label>Rollover unused budget</Label>
@@ -660,12 +826,51 @@ function BudgetEditDialog({ open, onClose, category, onSave }: BudgetEditDialogP
               {rollover ? 'On' : 'Off'}
             </Button>
           </div>
+          {rollover && (
+            <div className="space-y-2">
+              <Label htmlFor="rollover-target">Send surplus to</Label>
+              <Select
+                value={rolloverTarget}
+                onValueChange={setRolloverTarget}
+              >
+                <SelectTrigger id="rollover-target">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Stay in same category</SelectItem>
+                  {categories
+                    .filter(cat => !category || cat.id !== category.id)
+                    .map(cat => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Surplus calculated at month end will boost the selected category&apos;s next-month budget.
+              </p>
+            </div>
+          )}
           <div className="flex gap-2 pt-2">
             <Button variant="outline" onClick={onClose} className="flex-1 bg-transparent">
               Cancel
             </Button>
-            <Button onClick={handleSave} className="flex-1">
-              Save
+            <Select value={deleteScope} onValueChange={(v) => setDeleteScope(v as 'this_month' | 'from_month' | 'all')}>
+              <SelectTrigger className="w-[170px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="this_month">Delete this month</SelectItem>
+                <SelectItem value="from_month">Delete from here</SelectItem>
+                <SelectItem value="all">Delete everywhere</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="destructive" onClick={handleDelete} disabled={isSaving}>
+              Delete
+            </Button>
+            <Button onClick={handleSave} className="flex-1" disabled={isSaving}>
+              {isSaving ? 'Saving…' : 'Save'}
             </Button>
           </div>
         </div>
@@ -678,7 +883,7 @@ function BudgetEditDialog({ open, onClose, category, onSave }: BudgetEditDialogP
 interface AddBudgetDialogProps {
   open: boolean
   onClose: () => void
-  onAdd: (category: Omit<Category, 'id' | 'currentMonthSpent'>) => void
+  onAdd: (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null }) => Promise<string | null>
 }
 
 const CATEGORY_ICONS = [
@@ -702,20 +907,28 @@ function AddBudgetDialog({ open, onClose, onAdd }: AddBudgetDialogProps) {
   const [budget, setBudget] = useState('')
   const [selectedIcon, setSelectedIcon] = useState('shopping-cart')
   const [selectedColor, setSelectedColor] = useState(CATEGORY_COLORS[0])
+  const [rollover, setRollover] = useState(false)
+  const [rolloverTarget, setRolloverTarget] = useState('none')
+  const [purpose, setPurpose] = useState('')
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (name && budget) {
-      onAdd({
+      await onAdd({
         name,
         icon: selectedIcon,
         color: selectedColor,
         monthlyBudget: parseFloat(budget),
-        rollover: false,
+        rollover,
+        rolloverTargetCategoryId: rollover ? (rolloverTarget === 'none' ? null : rolloverTarget) : null,
+        purpose,
       })
       setName('')
       setBudget('')
       setSelectedIcon('shopping-cart')
       setSelectedColor(CATEGORY_COLORS[0])
+      setRollover(false)
+      setRolloverTarget('none')
+      setPurpose('')
       onClose()
     }
   }
@@ -750,6 +963,15 @@ function AddBudgetDialog({ open, onClose, onAdd }: AddBudgetDialogProps) {
                 className="pl-7"
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="purpose-add">Purpose (optional)</Label>
+            <Input
+              id="purpose-add"
+              placeholder="e.g., Ski trip installments"
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
             <Label>Icon</Label>
@@ -803,41 +1025,228 @@ function AddBudgetDialog({ open, onClose, onAdd }: AddBudgetDialogProps) {
 }
 
 // Budgets View
-function BudgetsView({ categories, onUpdateCategory, onAddCategory }: { 
+export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBudgetsForMonth, onCopyBudgets, onUpsertBudget, onDeleteBudget, onUpdateCategory, onAddCategory }: { 
   categories: Category[]
+  transactions: Transaction[]
+  budgetsByMonth: Record<string, Budget[]>
+  fetchBudgetsForMonth: (month: string, force?: boolean) => Promise<void>
+  onCopyBudgets: (month: string, sourceMonth: string) => Promise<void>
+  onUpsertBudget: (month: string, categoryId: string, data: { limit: number; rollover?: boolean; rolloverTargetCategoryId?: string | null; purpose?: string | null; carryForwardEnabled?: boolean; isTerminal?: boolean; applyToFuture?: boolean }) => void | Promise<void>
+  onDeleteBudget: (categoryId: string, scope: 'this_month' | 'from_month' | 'all', month: string) => Promise<void>
   onUpdateCategory: (id: string, updates: Partial<Category>) => void
-  onAddCategory: (category: Omit<Category, 'id' | 'currentMonthSpent'>) => void
+  onAddCategory: (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null }) => Promise<string | null>
 }) {
+  const formatCurrency = useCurrencyFormatter()
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [isAddOpen, setIsAddOpen] = useState(false)
-  
-  const sortedCategories = [...categories].sort((a, b) => 
-    (b.currentMonthSpent / b.monthlyBudget) - (a.currentMonthSpent / a.monthlyBudget)
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date()
+    return new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1))
+  })
+  const currentMonthStart = useMemo(() => {
+    const now = new Date()
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+  }, [])
+  const normalizeDate = (dateStr: string) => {
+    const base = dateStr.split('T')[0]
+    return new Date(`${base}T00:00:00Z`)
+  }
+  const isInSelectedMonth = (dateStr: string) => {
+    const d = normalizeDate(dateStr)
+    return (
+      d.getUTCFullYear() === selectedMonth.getUTCFullYear() &&
+      d.getUTCMonth() === selectedMonth.getUTCMonth()
+    )
+  }
+  const isInMonth = (dateStr: string, monthRef: Date) => {
+    const d = normalizeDate(dateStr)
+    return d.getUTCFullYear() === monthRef.getUTCFullYear() && d.getUTCMonth() === monthRef.getUTCMonth()
+  }
+
+  const monthTransactions = useMemo(
+    () => transactions.filter(t => isInSelectedMonth(t.date)),
+    [transactions, selectedMonth]
+  )
+  const prevMonth = useMemo(() => {
+    const d = new Date(selectedMonth)
+    d.setUTCMonth(d.getUTCMonth() - 1)
+    return d
+  }, [selectedMonth])
+  const prevMonthTransactions = useMemo(
+    () => transactions.filter(t => isInMonth(t.date, prevMonth)),
+    [transactions, prevMonth]
   )
 
-  const totalBudget = categories.reduce((sum, c) => sum + c.monthlyBudget, 0)
-  const totalSpent = categories.reduce((sum, c) => sum + c.currentMonthSpent, 0)
+  const selectedMonthKey = useMemo(() => selectedMonth.toISOString().slice(0, 7), [selectedMonth])
+  const prevMonthKey = useMemo(() => prevMonth.toISOString().slice(0, 7), [prevMonth])
+
+  const selectedMonthBudgets = budgetsByMonth[selectedMonthKey] || []
+  const selectedBudgetEntryByCategory = useMemo(() => {
+    const map: Record<string, Budget> = {}
+    selectedMonthBudgets.forEach(b => { map[b.categoryId] = b })
+    return map
+  }, [selectedMonthBudgets])
+  const budgetByCategory = useMemo(() => {
+    const map: Record<string, number> = {}
+    selectedMonthBudgets.forEach(b => { map[b.categoryId] = b.limit })
+    return map
+  }, [selectedMonthBudgets])
+
+  const prevBudgetByCategory = useMemo(() => {
+    const map: Record<string, number> = {}
+    ;(budgetsByMonth[prevMonthKey] || []).forEach(b => { map[b.categoryId] = b.limit })
+    return map
+  }, [budgetsByMonth, prevMonthKey])
+
+  useEffect(() => {
+    fetchBudgetsForMonth(selectedMonthKey, true)
+    fetchBudgetsForMonth(prevMonthKey, true)
+  }, [fetchBudgetsForMonth, selectedMonthKey, prevMonthKey])
+
+  const rolloverIntoTargets = useMemo(() => {
+    const spentPrev: Record<string, number> = {}
+    prevMonthTransactions.forEach(t => {
+      if (t.amount >= 0) return
+      if (t.splits && t.splits.length > 0) {
+        t.splits.forEach(s => {
+          if (!s.categoryId) return
+          const amt = Math.abs(s.amount ?? 0)
+          spentPrev[s.categoryId] = (spentPrev[s.categoryId] || 0) + amt
+        })
+        return
+      }
+      if (t.category) {
+        spentPrev[t.category] = (spentPrev[t.category] || 0) + Math.abs(t.amount)
+      }
+    })
+    const surplusBySource: Record<string, number> = {}
+    categories.forEach(cat => {
+      const budgetLimit = prevBudgetByCategory[cat.id] ?? cat.monthlyBudget
+      const spent = spentPrev[cat.id] || 0
+      const surplus = Math.max(0, budgetLimit - spent)
+      surplusBySource[cat.id] = surplus
+    })
+    const inflowByTarget: Record<string, number> = {}
+    categories.forEach(cat => {
+      if (cat.rollover && cat.rolloverTargetCategoryId) {
+        const surplus = surplusBySource[cat.id] || 0
+        inflowByTarget[cat.rolloverTargetCategoryId] = (inflowByTarget[cat.rolloverTargetCategoryId] || 0) + surplus
+      }
+    })
+    return inflowByTarget
+  }, [categories, prevMonthTransactions])
+
+  const spendingByCategory = useMemo(() => {
+    const totals: Record<string, number> = {}
+    monthTransactions.forEach(t => {
+      if (t.amount >= 0) return
+      if (t.splits && t.splits.length > 0) {
+        t.splits.forEach(s => {
+          if (!s.categoryId) return
+          const amt = Math.abs(s.amount ?? 0)
+          totals[s.categoryId] = (totals[s.categoryId] || 0) + amt
+        })
+      } else if (t.category) {
+        totals[t.category] = (totals[t.category] || 0) + Math.abs(t.amount)
+      }
+    })
+    return totals
+  }, [monthTransactions])
+
+  const monthCategories = useMemo(
+    () => selectedMonthBudgets
+      .map(budget => {
+        const cat = categories.find(c => c.id === budget.categoryId)
+        if (!cat) return null
+        const spent = spendingByCategory[cat.id] || 0
+        const rolloverBoost = rolloverIntoTargets[cat.id] || 0
+        const limit = (budgetByCategory[cat.id] ?? 0) + rolloverBoost
+        return { ...cat, currentMonthSpent: spent, monthlyBudget: limit }
+      })
+      .filter((cat): cat is Category => cat !== null),
+    [selectedMonthBudgets, categories, spendingByCategory, rolloverIntoTargets, budgetByCategory],
+  )
+  
+  const sortedCategories = useMemo(
+    () => [...monthCategories].sort((a, b) => {
+      const aRemaining = a.monthlyBudget - a.currentMonthSpent
+      const bRemaining = b.monthlyBudget - b.currentMonthSpent
+      const aOver = aRemaining < 0
+      const bOver = bRemaining < 0
+      if (aOver !== bOver) return aOver ? -1 : 1
+
+      const aRatio = a.monthlyBudget > 0 ? a.currentMonthSpent / a.monthlyBudget : 0
+      const bRatio = b.monthlyBudget > 0 ? b.currentMonthSpent / b.monthlyBudget : 0
+      if (bRatio !== aRatio) return bRatio - aRatio
+
+      return a.name.localeCompare(b.name)
+    }),
+    [monthCategories],
+  )
+
+  const totalBudget = monthCategories.reduce((sum, c) => sum + c.monthlyBudget, 0)
+  const totalSpent = monthCategories.reduce((sum, c) => sum + c.currentMonthSpent, 0)
+  const prevHasBudgets = (budgetsByMonth[prevMonthKey] || []).length > 0
+  const hasBudgets = selectedMonthBudgets.length > 0
+
+  const goMonth = (delta: number) => {
+    setSelectedMonth(prev => {
+      const next = new Date(prev)
+      next.setUTCMonth(prev.getUTCMonth() + delta)
+      return new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth(), 1))
+    })
+  }
+  const canGoForward = selectedMonth < currentMonthStart
+
+  const handleAddCategory = async (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null }) => {
+    const id = await onAddCategory(category)
+    if (id && category.monthlyBudget !== undefined) {
+      await onUpsertBudget(selectedMonthKey, id, { limit: category.monthlyBudget, rollover: category.rollover, purpose: category.purpose ?? category.name })
+    }
+    return id
+  }
 
   return (
     <div className="space-y-4 px-4 lg:px-6 py-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold">January 2026</h2>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={() => goMonth(-1)}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-[160px] text-center">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Month</p>
+            <p className="font-semibold">
+              {selectedMonth.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
+            </p>
+          </div>
+          <Button variant="outline" size="icon" onClick={() => goMonth(1)} disabled={!canGoForward}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="text-right">
+          <h2 className="font-semibold">Budgets</h2>
           <p className="text-sm text-muted-foreground">
             {formatCurrency(totalSpent)} of {formatCurrency(totalBudget)} spent
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setIsAddOpen(true)}>
+        <Button variant="outline" size="sm" onClick={() => setIsAddOpen(true)} className="ml-auto">
           <Plus className="h-4 w-4 mr-2" />
           Add Budget
         </Button>
+        {!hasBudgets && prevHasBudgets && (
+          <Button size="sm" onClick={() => onCopyBudgets(selectedMonthKey, prevMonthKey)}>
+            Copy last month
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
         {sortedCategories.map(category => {
-          const percentage = (category.currentMonthSpent / category.monthlyBudget) * 100
-          const isOverBudget = percentage > 100
+          const percentage = category.monthlyBudget
+            ? (category.currentMonthSpent / category.monthlyBudget) * 100
+            : 0
           const remaining = category.monthlyBudget - category.currentMonthSpent
+          const isOverBudget = remaining < 0
 
           return (
             <Card key={category.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setEditingCategory(category)}>
@@ -891,43 +1300,61 @@ function BudgetsView({ categories, onUpdateCategory, onAddCategory }: {
         open={!!editingCategory}
         onClose={() => setEditingCategory(null)}
         category={editingCategory}
-        onSave={onUpdateCategory}
+        month={selectedMonthKey}
+        budgetLimit={editingCategory ? (budgetByCategory[editingCategory.id] ?? editingCategory.monthlyBudget) : 0}
+        budgetEntry={editingCategory ? selectedBudgetEntryByCategory[editingCategory.id] : null}
+        onSaveCategory={onUpdateCategory}
+        onSaveBudget={onUpsertBudget}
+        onDeleteBudget={onDeleteBudget}
+        categories={categories}
       />
 
       <AddBudgetDialog
         open={isAddOpen}
         onClose={() => setIsAddOpen(false)}
-        onAdd={onAddCategory}
+        onAdd={handleAddCategory}
       />
     </div>
   )
 }
 
 function TransactionsContent() {
+  const isValidTransactionsTab = (tab: string | null): tab is 'transactions' | 'recurring' =>
+    tab === 'transactions' || tab === 'recurring'
+
   const { 
     transactions, 
     categories, 
+    budgets,
+    fetchBudgetsForMonth,
     recurringPayments,
+    billInstances,
+    updateBillInstance,
     addRecurringPayment,
     updateRecurringPayment,
     toggleRecurringPause,
     stopRecurringPayment,
     updateTransaction, 
     deleteTransaction, 
-    updateCategory, 
-    addCategory, 
     attachReceiptToTransaction, 
-    addReceipt 
+    addReceipt,
+    importTransactionsFile,
   } = useData()
   const [searchQuery, setSearchQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'uncategorized' | 'categorized'>('all')
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
   const searchParams = useSearchParams()
-  const initialTab = searchParams.get('tab') || 'transactions'
+  const initialTabParam = searchParams.get('tab')
+  const initialTab = isValidTransactionsTab(initialTabParam) ? initialTabParam : 'transactions'
   const [activeTab, setActiveTab] = useState(initialTab)
   useEffect(() => {
     const tab = searchParams.get('tab')
-    if (tab && tab !== activeTab) setActiveTab(tab)
+    if (!tab) return
+    if (!isValidTransactionsTab(tab)) {
+      if (activeTab !== 'transactions') setActiveTab('transactions')
+      return
+    }
+    if (tab !== activeTab) setActiveTab(tab)
   }, [searchParams, activeTab])
   const [recurringFormOpen, setRecurringFormOpen] = useState(false)
   const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null)
@@ -939,11 +1366,36 @@ function TransactionsContent() {
     categoryId: 'none',
     autoPost: true,
   })
+  const [isImporting, setIsImporting] = useState(false)
+  const [importMessage, setImportMessage] = useState<string | null>(null)
+
+  const handleImport = async (file: File | null) => {
+    if (!file) return
+    setIsImporting(true)
+    setImportMessage(null)
+    try {
+      const result = await importTransactionsFile(file)
+      if (result) {
+        const { imported, skipped, errors } = result
+        setImportMessage(`Imported ${imported} transactions${skipped ? `, skipped ${skipped}` : ''}${errors?.length ? ` (${errors.length} errors)` : ''}`)
+      }
+    } catch (err) {
+      setImportMessage(err instanceof Error ? err.message : 'Import failed')
+    } finally {
+      setIsImporting(false)
+    }
+  }
 
   const handleUpdate = useCallback((id: string, updates: Partial<Transaction>) => {
     updateTransaction(id, updates)
     setSelectedTransaction((prev) => prev && prev.id === id ? { ...prev, ...updates } : prev)
   }, [updateTransaction])
+
+  const isTxnUncategorized = useCallback((t: Transaction) => {
+    const hasSplits = (t.splits?.length || 0) > 0
+    const splitHasCategory = t.splits?.some(s => s.categoryId) || false
+    return t.amount < 0 && !t.category && !(hasSplits && splitHasCategory)
+  }, [])
 
   // Filter and group transactions
   const filteredTransactions = useMemo(() => {
@@ -951,9 +1403,9 @@ function TransactionsContent() {
 
     // Apply filter
     if (filter === 'uncategorized') {
-      filtered = filtered.filter(t => t.category === null && t.amount < 0)
+      filtered = filtered.filter(isTxnUncategorized)
     } else if (filter === 'categorized') {
-      filtered = filtered.filter(t => t.category !== null || t.amount > 0)
+      filtered = filtered.filter(t => t.category !== null || t.amount > 0 || (t.splits && t.splits.some(s => s.categoryId)))
     }
 
     // Apply search
@@ -966,7 +1418,7 @@ function TransactionsContent() {
     }
 
     return filtered
-  }, [transactions, filter, searchQuery])
+  }, [transactions, filter, searchQuery, isTxnUncategorized])
 
   // Group by date
   const groupedTransactions = useMemo(() => {
@@ -978,9 +1430,47 @@ function TransactionsContent() {
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]))
   }, [filteredTransactions])
 
-  const uncategorizedCount = transactions.filter(t => t.category === null && t.amount < 0).length
+  const uncategorizedCount = transactions.filter(isTxnUncategorized).length
   const recurringActive = recurringPayments.filter(p => !p.endDate)
   const recurringStopped = recurringPayments.filter(p => p.endDate)
+  const selectedTransactionMonth = useMemo(
+    () => (selectedTransaction?.date ? selectedTransaction.date.split('T')[0].slice(0, 7) : null),
+    [selectedTransaction],
+  )
+
+  useEffect(() => {
+    if (!selectedTransactionMonth) return
+    fetchBudgetsForMonth(selectedTransactionMonth)
+  }, [selectedTransactionMonth, fetchBudgetsForMonth])
+
+  const pickerCategories = useMemo(() => {
+    if (!selectedTransactionMonth) return categories
+    const monthBudgets = budgets[selectedTransactionMonth] || []
+    const budgetByCategory: Record<string, number> = {}
+    monthBudgets.forEach(b => { budgetByCategory[b.categoryId] = b.limit })
+
+    const spendingByCategory: Record<string, number> = {}
+    transactions.forEach(t => {
+      const txnMonth = t.date.split('T')[0].slice(0, 7)
+      if (txnMonth !== selectedTransactionMonth || t.amount >= 0) return
+      if (t.splits && t.splits.length > 0) {
+        t.splits.forEach(s => {
+          if (!s.categoryId) return
+          spendingByCategory[s.categoryId] = (spendingByCategory[s.categoryId] || 0) + Math.abs(s.amount ?? 0)
+        })
+        return
+      }
+      if (t.category) {
+        spendingByCategory[t.category] = (spendingByCategory[t.category] || 0) + Math.abs(t.amount)
+      }
+    })
+
+    return categories.map(cat => ({
+      ...cat,
+      monthlyBudget: budgetByCategory[cat.id] ?? 0,
+      currentMonthSpent: spendingByCategory[cat.id] ?? 0,
+    }))
+  }, [selectedTransactionMonth, categories, budgets, transactions])
 
   return (
     <AppShell title="Transactions" showSearch>
@@ -995,7 +1485,6 @@ function TransactionsContent() {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="budgets">Budgets</TabsTrigger>
             <TabsTrigger value="recurring">Recurring</TabsTrigger>
           </TabsList>
         </div>
@@ -1013,7 +1502,7 @@ function TransactionsContent() {
               />
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap items-center">
               {(['all', 'uncategorized', 'categorized'] as const).map((f) => (
                 <Button
                   key={f}
@@ -1030,6 +1519,26 @@ function TransactionsContent() {
                   )}
                 </Button>
               ))}
+              <div className="flex items-center gap-2">
+                <Input
+                  type="file"
+                  accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                  className="hidden"
+                  id="file-import"
+                  onChange={(e) => handleImport(e.target.files?.[0] || null)}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isImporting}
+                  onClick={() => document.getElementById('file-import')?.click()}
+                >
+                  {isImporting ? 'Importing…' : 'Import CSV/XLSX'}
+                </Button>
+                {importMessage && (
+                  <p className="text-xs text-muted-foreground">{importMessage}</p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1072,10 +1581,6 @@ function TransactionsContent() {
               </div>
             )}
           </div>
-        </TabsContent>
-
-        <TabsContent value="budgets" className="mt-0">
-          <BudgetsView categories={categories} />
         </TabsContent>
 
         <TabsContent value="recurring" className="mt-0">
@@ -1168,6 +1673,47 @@ function TransactionsContent() {
               </CardContent>
             </Card>
 
+            <Card>
+              <CardHeader className="pb-2 flex items-center gap-2">
+                <CardTitle className="text-base">Upcoming bills</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {billInstances.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No bills yet.</p>
+                )}
+                {billInstances.map(b => (
+                  <div key={b.id} className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="font-medium">{recurringPayments.find(r => r.id === b.recurringPaymentId)?.name || 'Bill'}</p>
+                      <p className="text-xs text-muted-foreground">Due {b.dueDate}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={b.status}
+                        onValueChange={(val) => updateBillInstance(b.id, { status: val as any })}
+                      >
+                        <SelectTrigger className="w-28 h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="projected">Projected</SelectItem>
+                          <SelectItem value="paid">Paid</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-transparent"
+                        onClick={() => updateBillInstance(b.id, { status: b.status === 'paid' ? 'projected' : 'paid' })}
+                      >
+                        Mark {b.status === 'paid' ? 'Projected' : 'Paid'}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
             {recurringStopped.length > 0 && (
               <Card>
                 <CardHeader className="pb-2">
@@ -1192,7 +1738,7 @@ function TransactionsContent() {
       {/* Transaction Detail Sheet */}
       <TransactionDetail
         transaction={selectedTransaction}
-        categories={categories}
+        categories={pickerCategories}
         onClose={() => setSelectedTransaction(null)}
         onUpdate={handleUpdate}
         onDelete={deleteTransaction}
@@ -1343,10 +1889,8 @@ function TransactionsContent() {
 
 export default function TransactionsPage() {
   return (
-    <DataProvider>
-      <Suspense fallback={<div className="p-4">Loading transactions...</div>}>
-        <TransactionsContent />
-      </Suspense>
-    </DataProvider>
+    <Suspense fallback={<div className="p-4">Loading transactions...</div>}>
+      <TransactionsContent />
+    </Suspense>
   )
 }

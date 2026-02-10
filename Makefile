@@ -4,8 +4,8 @@
 DC ?= docker compose
 ENV_DEV ?= .env.dev
 ENV_PROD ?= .env.prod
-SERVICE_DEV ?= web-dev api-dev
-SERVICE_PROD ?= web api
+SERVICE_DEV ?= web-dev api-dev postgres
+SERVICE_PROD ?= web api postgres
 BUILD_SERVICES ?= web web-dev api api-dev
 TEST_PY ?= $(if $(wildcard back/.venv/bin/python),.venv/bin/python,python)
 TEST_ARGS ?=

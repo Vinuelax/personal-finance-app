@@ -10,23 +10,20 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import type { Transaction, Category, BillInstance, IOU, Investment, RecurringPayment } from '@/lib/types'
 import { SparklineChart } from './sparkline-chart'
+import { useData } from '@/lib/data-context'
+
+const useCurrencyFormatter = () => {
+  const { formatCurrency } = useData()
+  return formatCurrency
+}
+
+const formatWithSign = (formatCurrency: (amount: number) => string, amount: number) => {
+  if (amount === 0) return formatCurrency(amount)
+  return amount > 0 ? `+${formatCurrency(Math.abs(amount))}` : `-${formatCurrency(Math.abs(amount))}`
+}
 
 const formatShortUTCDate = (dateStr: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(dateStr))
-
-// Format currency
-function formatCurrency(amount: number, showSign = false) {
-  const formatted = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(Math.abs(amount))
-  
-  if (showSign && amount !== 0) {
-    return amount > 0 ? `+${formatted}` : `-${formatted}`
-  }
-  return formatted
-}
 
 // Month at a Glance Card
 interface MonthGlanceCardProps {
@@ -37,6 +34,8 @@ interface MonthGlanceCardProps {
 }
 
 export function MonthGlanceCard({ totalSpent, totalIncome, dailySpending, isLoading }: MonthGlanceCardProps) {
+  const formatCurrency = useCurrencyFormatter()
+
   const net = totalIncome - totalSpent
   
   if (isLoading) {
@@ -70,7 +69,7 @@ export function MonthGlanceCard({ totalSpent, totalIncome, dailySpending, isLoad
               net >= 0 ? "text-positive" : "text-negative"
             )}>
               {net >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-              {formatCurrency(net, true)}
+              {formatWithSign(formatCurrency, net)}
             </p>
             <p className="text-xs text-muted-foreground">net</p>
           </div>
@@ -91,6 +90,7 @@ interface BudgetsSummaryCardProps {
 }
 
 export function BudgetsSummaryCard({ categories, isLoading }: BudgetsSummaryCardProps) {
+  const formatCurrency = useCurrencyFormatter()
   const sortedCategories = [...categories]
     .sort((a, b) => (b.currentMonthSpent / b.monthlyBudget) - (a.currentMonthSpent / a.monthlyBudget))
     .slice(0, 3)
@@ -166,6 +166,7 @@ interface UncategorizedCardProps {
 }
 
 export function UncategorizedCard({ transactions, isLoading }: UncategorizedCardProps) {
+  const formatCurrency = useCurrencyFormatter()
   const uncategorized = transactions.filter(t => t.category === null && t.amount < 0)
   const latestThree = uncategorized.slice(0, 3)
 
@@ -236,6 +237,7 @@ interface UpcomingCardProps {
 }
 
 export function UpcomingCard({ billInstances, recurringPayments, isLoading }: UpcomingCardProps) {
+  const formatCurrency = useCurrencyFormatter()
   const upcoming = billInstances
     .filter(b => b.status === 'projected')
     .slice(0, 4)
@@ -317,6 +319,7 @@ interface IOUsCardProps {
 }
 
 export function IOUsCard({ ious, isLoading }: IOUsCardProps) {
+  const formatCurrency = useCurrencyFormatter()
   const openIOUs = ious.filter(i => i.status === 'open')
   const theyOweMe = openIOUs.filter(i => i.netBalance > 0).reduce((sum, i) => sum + i.netBalance, 0)
   const iOweThem = openIOUs.filter(i => i.netBalance < 0).reduce((sum, i) => sum + Math.abs(i.netBalance), 0)
@@ -367,7 +370,7 @@ export function IOUsCard({ ious, isLoading }: IOUsCardProps) {
                   "font-medium",
                   iou.netBalance > 0 ? "text-positive" : "text-negative"
                 )}>
-                  {formatCurrency(iou.netBalance, true)}
+                  {formatWithSign(formatCurrency, iou.netBalance)}
                 </span>
               </div>
             ))}
@@ -385,6 +388,7 @@ interface InvestmentsCardProps {
 }
 
 export function InvestmentsCard({ investments = [], isLoading }: InvestmentsCardProps) {
+  const formatCurrency = useCurrencyFormatter()
   const totalValue = investments.reduce((sum, inv) => sum + (inv.quantity * inv.currentPrice), 0)
   const totalCost = investments.reduce((sum, inv) => sum + (inv.quantity * inv.avgCost), 0)
   const totalGain = totalValue - totalCost
@@ -449,7 +453,7 @@ export function InvestmentsCard({ investments = [], isLoading }: InvestmentsCard
               totalGain >= 0 ? "text-positive" : "text-negative"
             )}>
               {totalGain >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-              {formatCurrency(totalGain, true)} ({percentGain.toFixed(1)}%)
+              {formatWithSign(formatCurrency, totalGain)} ({percentGain.toFixed(1)}%)
             </p>
             <p className="text-xs text-muted-foreground">all time</p>
           </div>
