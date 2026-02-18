@@ -1,0 +1,63 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "front/**"
+      - ".github/workflows/deploy-front.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  WEB_BUCKET: pennypilot-web-dev-use1
+  CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+  FRONTEND_API_BASE_URL_SSM_PARAM: /pennypilot/dev/frontend/api_base_url
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve API base URL from SSM
+        run: |
+          API_BASE_URL="$(aws ssm get-parameter --name "$FRONTEND_API_BASE_URL_SSM_PARAM" --query 'Parameter.Value' --output text 2>/dev/null || true)"
+          if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
+            API_BASE_URL="https://api.vinuelax.cl/api/v1"
+          fi
+          echo "NEXT_PUBLIC_API_BASE_URL=$API_BASE_URL" >> "$GITHUB_ENV"
+
+      - name: Build static frontend
+        working-directory: front
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Upload to S3
+        run: aws s3 sync front/out/ s3://${WEB_BUCKET} --delete
+
+      - name: Invalidate CloudFront cache
+        if: ${{ env.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        run: aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths "/*"

@@ -11,11 +11,13 @@ from sqlalchemy import (
     TIMESTAMP,
     Index,
     func,
+    JSON,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
+JSON_TYPE = JSON().with_variant(JSONB, "postgresql")
 
 def now_ts():
     return datetime.utcnow()
@@ -106,7 +108,7 @@ class Transaction(Base):
     source = Column(Text)
     account_id = Column(Text)
     receipt_id = Column(String, ForeignKey("receipts.id", ondelete="SET NULL"))
-    splits = Column(JSONB)
+    splits = Column(JSON_TYPE)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts, onupdate=now_ts)
 
@@ -120,14 +122,14 @@ class Receipt(Base):
     total_cents = Column(Integer, nullable=False)
     status = Column(Text, nullable=False)
     image_url = Column(Text)
-    line_items = Column(JSONB)
+    line_items = Column(JSON_TYPE)
     transaction_id = Column(String, ForeignKey("transactions.id", ondelete="SET NULL"))
     ocr_provider = Column(Text)
     ocr_confidence = Column(Numeric(5, 4))
     ocr_raw_text = Column(Text)
-    ocr_raw_blocks = Column(JSONB)
+    ocr_raw_blocks = Column(JSON_TYPE)
     ocr_error = Column(Text)
-    parsed_receipt = Column(JSONB)
+    parsed_receipt = Column(JSON_TYPE)
     needs_review = Column(Boolean, nullable=False, default=False)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts, onupdate=now_ts)

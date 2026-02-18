@@ -145,3 +145,15 @@ vite.config.ts.timestamp-*
 __pycache__/
 *.pyc
 _data/
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/terraform.tfvars
+infra/*.tfplan
+infra/*.plan
+infra/*.plan.json
+infra/.bootstrap.plan
+infra/.bootstrap.plan.json
+infra/bootstrap_summary.json
+.secret
+infra/.terraform.lock.hcl

@@ -1,0 +1,40 @@
+aws_region                      = "us-east-1"
+environment                     = "dev"
+app_name                        = "pennypilot"
+domain_name                     = "vinuelax.cl"
+web_subdomain                   = "app"
+api_subdomain                   = "api"
+web_bucket_name                 = "pennypilot-web-dev-use1"
+receipts_bucket_name            = "pennypilot-receipts-dev-use1"
+# Leave empty to let Terraform create + DNS-validate a cert for app.<domain_name>.
+# Or set an existing us-east-1 ACM cert ARN.
+cloudfront_acm_certificate_arn  = ""
+api_gateway_acm_certificate_arn = ""
+
+# Set one of these options for Route53:
+create_public_hosted_zone       = false
+existing_route53_zone_id        = "Z1234567890ABC"
+
+# Optional api CNAME target (set if you already have API Gateway custom domain target)
+api_dns_target                  = "d-abc123xyz.execute-api.us-east-1.amazonaws.com"
+backend_lambda_name             = "pennypilot-api-dev-use1"
+create_api_gateway              = true
+ocr_lambda_name                 = "pennypilot-receipt-processor-dev-use1"
+create_ocr_lambda              = false
+backend_lambda_runtime          = "python3.12"
+ocr_lambda_runtime              = "python3.12"
+backend_lambda_timeout_seconds  = 30
+ocr_lambda_timeout_seconds      = 120
+backend_lambda_memory_mb        = 512
+ocr_lambda_memory_mb            = 512
+internal_service_token          = "dev-internal-token"
+backend_cors_origins            = "*"
+ocr_provider                    = "mock"
+# Optional override. If empty, defaults to /<app_name>/<environment>/frontend/api_base_url
+frontend_api_base_url_ssm_parameter_name = ""
+create_rds_postgres            = true
+db_name                        = "pfa"
+db_username                    = "pfa_admin"
+db_password                    = "ChangeMeStrongPass123!"
+db_instance_class              = "db.t3.micro"
+db_allocated_storage           = 20

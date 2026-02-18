@@ -27,7 +27,7 @@ def init_db():
     from .models import Base
     Base.metadata.create_all(bind=engine)
 
-    # Lightweight, backward-compatible migrations for budgets table
+    # Lightweight, backward-compatible migrations for existing deployments.
     with engine.begin() as conn:
         conn.exec_driver_sql(
             """
@@ -39,5 +39,12 @@ def init_db():
             ALTER TABLE budgets ADD COLUMN IF NOT EXISTS is_terminal BOOLEAN NOT NULL DEFAULT FALSE;
             ALTER TABLE budgets ADD COLUMN IF NOT EXISTS objective_id TEXT;
             ALTER TABLE objectives ADD COLUMN IF NOT EXISTS total_amount_cents INTEGER;
+            ALTER TABLE receipts ADD COLUMN IF NOT EXISTS ocr_provider TEXT;
+            ALTER TABLE receipts ADD COLUMN IF NOT EXISTS ocr_confidence NUMERIC(5,4);
+            ALTER TABLE receipts ADD COLUMN IF NOT EXISTS ocr_raw_text TEXT;
+            ALTER TABLE receipts ADD COLUMN IF NOT EXISTS ocr_raw_blocks JSONB;
+            ALTER TABLE receipts ADD COLUMN IF NOT EXISTS ocr_error TEXT;
+            ALTER TABLE receipts ADD COLUMN IF NOT EXISTS parsed_receipt JSONB;
+            ALTER TABLE receipts ADD COLUMN IF NOT EXISTS needs_review BOOLEAN NOT NULL DEFAULT FALSE;
             """
         )

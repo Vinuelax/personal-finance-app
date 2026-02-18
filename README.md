@@ -132,3 +132,44 @@ Partially implemented or UI-only areas:
 
 - A root-level `db/data` directory may require local permission adjustments if Docker created it as root on your machine.
 - Backend OpenAPI is available at `http://localhost:8001/docs` when `api-dev` is running.
+
+## Cloud Deploy (Dev)
+
+This repository includes Terraform under `infra/` and GitHub Actions workflows under `.github/workflows/` to avoid manual uploads.
+
+### Current cloud targets
+
+- App domain: `app.vinuelax.cl`
+- API base URL used by frontend prod build: `https://api.vinuelax.cl/api/v1`
+- AWS region: `us-east-1`
+- Environment: `dev`
+
+### GitHub Actions workflows
+
+- `deploy-front.yml`: builds `front/` static export and syncs to S3, then invalidates CloudFront.
+- `deploy-backend-lambda.yml`: packages `back/` and updates Lambda code.
+- `deploy-ocr-lambda.yml`: packages `ocr-lambda/` and updates Lambda code.
+- `infra-terraform.yml`: runs Terraform init/validate/plan for `infra/`.
+
+> OCR deploys are currently disabled by default. The workflow
+> `.github/workflows/deploy-ocr-lambda.yml` only runs when repo variable
+> `ENABLE_OCR_DEPLOY` is set to `true`.
+
+### Required GitHub config
+
+Repository secret:
+- `AWS_DEPLOY_ROLE_ARN`: IAM role ARN used by GitHub OIDC to deploy.
+
+Repository variable:
+- `CLOUDFRONT_DISTRIBUTION_ID`: CloudFront distribution for `app.vinuelax.cl`.
+
+### Terraform
+
+Use `infra/terraform.tfvars.example` as your template:
+
+```bash
+cd infra
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform plan -var-file=terraform.tfvars
+```
