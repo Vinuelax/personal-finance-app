@@ -141,6 +141,9 @@ jobs:
           db_allocated_storage            = 20
           EOF
 
+      - name: Normalize generated tfvars formatting
+        run: terraform fmt terraform.tfvars >/dev/null
+
       - name: Terraform init
         run: terraform init
 
