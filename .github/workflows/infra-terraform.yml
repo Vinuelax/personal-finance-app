@@ -29,6 +29,62 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Debug OIDC claims
+        env:
+          ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          echo "GitHub context:"
+          echo "  repository: $GITHUB_REPOSITORY"
+          echo "  event_name: $GITHUB_EVENT_NAME"
+          echo "  ref: $GITHUB_REF"
+          echo "  actor: $GITHUB_ACTOR"
+          if [ -z "$ROLE_ARN" ]; then
+            echo "AWS_DEPLOY_ROLE_ARN is missing"
+          else
+            echo "AWS_DEPLOY_ROLE_ARN is configured"
+          fi
+
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "OIDC request variables are unavailable"
+            exit 1
+          fi
+
+          OIDC_RESP="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")"
+          export OIDC_RESP
+
+          python3 - <<'PY'
+import base64
+import json
+import os
+import sys
+
+resp = json.loads(os.environ["OIDC_RESP"])
+token = resp.get("value")
+if not token:
+    print("Failed to obtain OIDC token from GitHub")
+    sys.exit(1)
+
+parts = token.split(".")
+if len(parts) < 2:
+    print("OIDC token format is invalid")
+    sys.exit(1)
+
+payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+
+interesting = {
+    "iss": payload.get("iss"),
+    "aud": payload.get("aud"),
+    "sub": payload.get("sub"),
+    "repository": payload.get("repository"),
+    "ref": payload.get("ref"),
+    "job_workflow_ref": payload.get("job_workflow_ref"),
+}
+
+print("OIDC claims used for IAM trust matching:")
+print(json.dumps(interesting, indent=2))
+PY
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
