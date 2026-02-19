@@ -160,9 +160,6 @@ This repository includes Terraform under `infra/` and GitHub Actions workflows u
 Repository secret:
 - `AWS_DEPLOY_ROLE_ARN`: IAM role ARN used by GitHub OIDC to deploy.
 
-Repository variable:
-- `CLOUDFRONT_DISTRIBUTION_ID`: CloudFront distribution for `app.vinuelax.cl`.
-
 ### Terraform
 
 Use `infra/terraform.tfvars.example` as your template:

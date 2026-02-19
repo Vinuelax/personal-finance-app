@@ -35,6 +35,56 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
 
+      - name: Generate terraform.tfvars
+        env:
+          INTERNAL_SERVICE_TOKEN: ${{ secrets.INTERNAL_SERVICE_TOKEN }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          test -n "$INTERNAL_SERVICE_TOKEN" || { echo "Missing repo secret: INTERNAL_SERVICE_TOKEN"; exit 1; }
+          test -n "$DB_PASSWORD" || { echo "Missing repo secret: DB_PASSWORD"; exit 1; }
+
+          DOMAIN_NAME="vinuelax.cl"
+          EXISTING_ROUTE53_ZONE_ID="$(aws route53 list-hosted-zones-by-name --dns-name "$DOMAIN_NAME" --query "HostedZones[?Name=='${DOMAIN_NAME}.']|[0].Id" --output text 2>/dev/null || true)"
+          EXISTING_ROUTE53_ZONE_ID="${EXISTING_ROUTE53_ZONE_ID##*/}"
+          test -n "$EXISTING_ROUTE53_ZONE_ID" || { echo "Route53 hosted zone not found for: $DOMAIN_NAME"; exit 1; }
+          test "$EXISTING_ROUTE53_ZONE_ID" != "None" || { echo "Route53 hosted zone not found for: $DOMAIN_NAME"; exit 1; }
+
+          cat > terraform.tfvars <<EOF
+          aws_region                      = "us-east-1"
+          environment                     = "dev"
+          app_name                        = "pennypilot"
+          domain_name                     = "vinuelax.cl"
+          web_subdomain                   = "app"
+          api_subdomain                   = "api"
+          web_bucket_name                 = "pennypilot-web-dev-use1"
+          receipts_bucket_name            = "pennypilot-receipts-dev-use1"
+          cloudfront_acm_certificate_arn  = ""
+          api_gateway_acm_certificate_arn = ""
+          create_public_hosted_zone       = false
+          existing_route53_zone_id        = "$EXISTING_ROUTE53_ZONE_ID"
+          api_dns_target                  = ""
+          backend_lambda_name             = "pennypilot-api-dev-use1"
+          create_api_gateway              = true
+          ocr_lambda_name                 = "pennypilot-receipt-processor-dev-use1"
+          create_ocr_lambda               = false
+          backend_lambda_runtime          = "python3.12"
+          ocr_lambda_runtime              = "python3.12"
+          backend_lambda_timeout_seconds  = 30
+          ocr_lambda_timeout_seconds      = 120
+          backend_lambda_memory_mb        = 512
+          ocr_lambda_memory_mb            = 512
+          internal_service_token          = "$INTERNAL_SERVICE_TOKEN"
+          backend_cors_origins            = "*"
+          ocr_provider                    = "mock"
+          frontend_api_base_url_ssm_parameter_name = ""
+          create_rds_postgres             = true
+          db_name                         = "pfa"
+          db_username                     = "pfa_admin"
+          db_password                     = "$DB_PASSWORD"
+          db_instance_class               = "db.t3.micro"
+          db_allocated_storage            = 20
+          EOF
+
       - name: Terraform init
         run: terraform init
 

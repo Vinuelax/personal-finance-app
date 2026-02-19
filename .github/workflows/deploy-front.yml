@@ -15,7 +15,7 @@ permissions:
 env:
   AWS_REGION: us-east-1
   WEB_BUCKET: pennypilot-web-dev-use1
-  CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+  WEB_DOMAIN: app.vinuelax.cl
   FRONTEND_API_BASE_URL_SSM_PARAM: /pennypilot/dev/frontend/api_base_url
 
 jobs:
@@ -49,6 +49,12 @@ jobs:
           fi
           echo "NEXT_PUBLIC_API_BASE_URL=$API_BASE_URL" >> "$GITHUB_ENV"
 
+          DISTRIBUTION_ID="$(aws cloudfront list-distributions --query "DistributionList.Items[?Aliases.Items && contains(Aliases.Items, '${WEB_DOMAIN}')].Id | [0]" --output text 2>/dev/null || true)"
+          if [ "$DISTRIBUTION_ID" = "None" ]; then
+            DISTRIBUTION_ID=""
+          fi
+          echo "CLOUDFRONT_DISTRIBUTION_ID=$DISTRIBUTION_ID" >> "$GITHUB_ENV"
+
       - name: Build static frontend
         working-directory: front
         run: |
@@ -59,5 +65,9 @@ jobs:
         run: aws s3 sync front/out/ s3://${WEB_BUCKET} --delete
 
       - name: Invalidate CloudFront cache
-        if: ${{ env.CLOUDFRONT_DISTRIBUTION_ID != '' }}
-        run: aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths "/*"
+        run: |
+          if [ -z "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+            echo "CloudFront distribution for $WEB_DOMAIN not found; skipping invalidation."
+            exit 0
+          fi
+          aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths "/*"
