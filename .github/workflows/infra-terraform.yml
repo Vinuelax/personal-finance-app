@@ -170,4 +170,4 @@ jobs:
         run: terraform validate
 
       - name: Terraform plan
-        run: terraform plan -input=false -var-file=terraform.tfvars
+        run: terraform plan -input=false -var-file=terraform.tfvars -out=tfplan
