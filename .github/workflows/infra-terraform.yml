@@ -29,6 +29,11 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Debug OIDC claims
         env:
           ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
@@ -90,6 +95,11 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
+
+      - name: Package lambda artifacts for Terraform
+        run: |
+          ../scripts/package_backend_lambda.sh
+          ../scripts/package_ocr_lambda.sh
 
       - name: Generate terraform.tfvars
         env:
