@@ -99,7 +99,13 @@ jobs:
       - name: Package lambda artifacts for Terraform
         run: |
           ../scripts/package_backend_lambda.sh
-          ../scripts/package_ocr_lambda.sh
+          if [ -f ../ocr-lambda/requirements.txt ]; then
+            ../scripts/package_ocr_lambda.sh
+          else
+            echo "ocr-lambda sources not present; creating placeholder dist/ocr_lambda.zip for terraform validate"
+            mkdir -p ../dist/ocr_lambda
+            (cd ../dist/ocr_lambda && printf 'placeholder\n' > README.txt && zip -rq ../ocr_lambda.zip README.txt)
+          fi
 
       - name: Generate terraform.tfvars
         env:
