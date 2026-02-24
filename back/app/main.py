@@ -33,10 +33,11 @@ app = FastAPI(title="Ledger Backend", version="0.1.0", lifespan=lifespan)
 # CORS
 origins_env = os.getenv("BACKEND_CORS_ORIGINS", "")
 origins = [o.strip() for o in origins_env.split(",") if o.strip()] or ["*"]
+allow_credentials = origins != ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

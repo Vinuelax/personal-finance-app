@@ -1,8 +1,9 @@
 'use client'
 
 import { AppShell } from '@/components/app-shell'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useData } from '@/lib/data-context'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { 
   MonthGlanceCard, 
   BudgetsSummaryCard, 
@@ -192,5 +193,22 @@ function DashboardContent() {
 
 
 export default function HomePage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [canRender, setCanRender] = useState(false)
+
+  useEffect(() => {
+    const isDemo = searchParams.get('demo') === 'true'
+    const hasToken = typeof window !== 'undefined' && !!window.localStorage.getItem('ledger_token')
+
+    if (!isDemo && !hasToken) {
+      router.replace('/welcome')
+      return
+    }
+
+    setCanRender(true)
+  }, [router, searchParams])
+
+  if (!canRender) return null
   return <DashboardContent />
 }
