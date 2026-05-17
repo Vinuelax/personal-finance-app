@@ -117,9 +117,6 @@ def login(body: AuthRequest, db: DB = Depends(get_db)):
         {
             "sub": body.email,
             "user_id": user.get("userId"),
-            "pwd_algo": user.get("passwordAlgo"),
-            "pwd_salt": user.get("passwordSalt"),
-            "pwd_iter": user.get("passwordIterations"),
         }
     )
     logger.info("Login success email=%s user_id=%s", body.email, user.get("userId"))
@@ -147,9 +144,6 @@ def signup(body: AuthRequest, db: DB = Depends(get_db)):
         {
             "sub": body.email,
             "user_id": user_item.get("userId"),
-            "pwd_algo": user_item.get("passwordAlgo"),
-            "pwd_salt": user_item.get("passwordSalt"),
-            "pwd_iter": user_item.get("passwordIterations"),
         }
     )
     return TokenResponse(access_token=token)
