@@ -16,7 +16,6 @@ import {
   Home,
   Receipt,
   Calendar,
-  TrendingUp,
   PiggyBank,
   Target,
   Settings,
@@ -25,7 +24,6 @@ import {
   Search,
   MoreVertical,
   Upload,
-  Users,
   Wallet,
 } from 'lucide-react'
 import {
@@ -41,7 +39,6 @@ const navItems = [
   { href: '/transactions', label: 'Transactions', icon: Receipt },
   { href: '/budgets', label: 'Budgets', icon: PiggyBank },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
-  { href: '/investments', label: 'Investments', icon: TrendingUp },
   { href: '/objectives', label: 'Objectives', icon: Target },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
@@ -230,10 +227,6 @@ export function AppShell({
               <DropdownMenuItem>
                 <Upload className="h-4 w-4 mr-2" />
                 Upload Receipt
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Users className="h-4 w-4 mr-2" />
-                Add IOU
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

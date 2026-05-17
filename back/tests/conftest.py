@@ -10,7 +10,7 @@ from httpx import ASGITransport
 
 # Ensure we import the app from the back package
 from app.main import app
-from utils.deps import get_db, create_access_token
+from utils.deps import create_access_token
 
 
 class SyncASGIClient:
@@ -64,9 +64,6 @@ def client(monkeypatch):
         monkeypatch.setenv("DEFAULT_USER_EMAIL", "user@example.com")
         monkeypatch.setenv("DEFAULT_USER_PASSWORD", "pw")
         monkeypatch.setenv("DEFAULT_USER_ID", "u_001")
-        # ensure DB uses the temp file for this test only
-        get_db.cache_clear()
-
         client = SyncASGIClient(app, base_prefix="/api/v1")
         # obtain auth token
         token = create_access_token({"sub": "test@example.com", "user_id": "u_001"})

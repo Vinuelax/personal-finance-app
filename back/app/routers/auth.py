@@ -16,7 +16,6 @@ from utils.db import DB
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-DEFAULT_USER_ID = os.getenv("DEFAULT_USER_ID", "u_001")
 DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "CLP")
 PBKDF2_ITERATIONS = int(os.getenv("AUTH_PBKDF2_ITERATIONS", "100000"))
 PBKDF2_ALGO = "PBKDF2-HMAC-SHA256"
@@ -46,11 +45,6 @@ class TokenResponse(BaseModel):
     token_type: str = Field("bearer", description="Token type (always 'bearer')")
 
 
-def _hash_password(password: str) -> str:
-    """Legacy SHA256 (kept to avoid breaking default demo user)."""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-
 def _derive_password(password: str, salt: bytes, iterations: int = PBKDF2_ITERATIONS) -> str:
     """PBKDF2-HMAC-SHA256 hex digest."""
     dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
@@ -61,23 +55,17 @@ def _get_user_by_email(db: DB, email: str):
     return db.get_user_by_email(email)
 
 
-def _get_user_record(db: DB, user_id: str):
-    return db.get_user(user_id)
-
-
 def _verify_password(password: str, user: dict) -> bool:
-    algo = user.get("passwordAlgo")
-    if algo == PBKDF2_ALGO:
-        salt_hex = user.get("passwordSalt")
-        iterations = user.get("passwordIterations", PBKDF2_ITERATIONS)
-        try:
-            salt = bytes.fromhex(salt_hex)
-        except Exception:
-            return False
-        derived = _derive_password(password, salt, iterations)
-        return secrets.compare_digest(derived, user.get("passwordHash", ""))
-    # legacy fallback
-    return secrets.compare_digest(_hash_password(password), user.get("passwordHash", ""))
+    if user.get("passwordAlgo") != PBKDF2_ALGO:
+        return False
+    salt_hex = user.get("passwordSalt")
+    iterations = user.get("passwordIterations", PBKDF2_ITERATIONS)
+    try:
+        salt = bytes.fromhex(salt_hex)
+    except Exception:
+        return False
+    derived = _derive_password(password, salt, iterations)
+    return secrets.compare_digest(derived, user.get("passwordHash", ""))
 
 
 def _new_user_item(email: str, password: str) -> dict:
@@ -110,11 +98,6 @@ def login(body: AuthRequest, db: DB = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing credentials")
 
     user = _get_user_by_email(db, body.email)
-    if not user:
-        # legacy single-demo-user fallback
-        legacy = _get_user_record(db, DEFAULT_USER_ID)
-        if legacy and legacy.get("email") == body.email:
-            user = legacy
     if not user:
         logger.warning("Login failed: user not found for email=%s", body.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
@@ -154,10 +137,6 @@ def signup(body: AuthRequest, db: DB = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing credentials")
 
     existing = _get_user_by_email(db, body.email)
-    if not existing:
-        legacy = _get_user_record(db, DEFAULT_USER_ID)
-        if legacy and legacy.get("email") == body.email:
-            existing = legacy
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists")
 

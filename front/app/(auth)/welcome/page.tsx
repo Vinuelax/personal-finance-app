@@ -107,11 +107,6 @@ export default function WelcomePage() {
             Sign In
           </Button>
         </Link>
-        <Link href="/?demo=true" className="block text-center">
-          <Button variant="ghost" size="sm" className="text-muted-foreground">
-            Try demo mode
-          </Button>
-        </Link>
       </div>
     </div>
   )

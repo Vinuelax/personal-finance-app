@@ -36,6 +36,7 @@ import {
   importTransactions,
   fetchCurrentUser,
   updateCurrentUser,
+  deleteCurrentUserData,
   ApiError,
   type ApiCategory,
   type ApiTransaction,
@@ -53,9 +54,6 @@ import type {
   Category,
   RecurringPayment,
   BillInstance,
-  IOU,
-  Investment,
-  FintualGoal,
   UserSettings,
   SyncStatus,
   Receipt,
@@ -63,15 +61,6 @@ import type {
   Objective,
   ObjectiveMonthPlan,
 } from './types'
-import {
-  demoTransactions,
-  demoCategories,
-  demoRecurringPayments,
-  demoBillInstances,
-  demoIOUs,
-  demoInvestments,
-  demoFintualGoals,
-} from './demo-data'
 
 interface User {
   name: string
@@ -88,9 +77,6 @@ interface DataContextType {
   budgets: Record<string, Budget[]>
   objectives: Objective[]
   receipts: Receipt[]
-  ious: IOU[]
-  investments: Investment[]
-  fintualGoals: FintualGoal[]
   settings: UserSettings
   syncStatus: SyncStatus
   user: User
@@ -114,7 +100,7 @@ interface DataContextType {
   importTransactionsFile: (file: File) => Promise<{ imported: number; skipped: number; errors: string[] } | null>
   updateReceipt: (id: string, updates: Partial<Receipt>) => void
   deleteReceipt: (id: string) => void
-  addCategory: (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null }) => Promise<string | null>
+  addCategory: (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null; budgetMonth?: string }) => Promise<string | null>
   updateCategory: (id: string, updates: Partial<Category>) => void
   upsertBudget: (month: string, categoryId: string, data: { limit: number; rollover?: boolean; rolloverTargetCategoryId?: string | null; purpose?: string | null; carryForwardEnabled?: boolean; isTerminal?: boolean; objectiveId?: string | null; applyToFuture?: boolean }) => Promise<void> | void
   deleteBudgetByScope: (categoryId: string, scope: 'this_month' | 'from_month' | 'all', month: string) => Promise<void>
@@ -123,18 +109,12 @@ interface DataContextType {
   completeObjective: (objectiveId: string) => Promise<void>
   deleteObjective: (objectiveId: string) => Promise<void>
   refreshObjectives: () => Promise<void>
-  addIOU: (iou: Omit<IOU, 'id' | 'createdAt' | 'settledAt'>) => void
-  settleIOU: (id: string) => void
-  addInvestment: (investment: Omit<Investment, 'id'>) => void
-  updateInvestment: (id: string, updates: Partial<Investment>) => void
-  deleteInvestment: (id: string) => void
   addRecurringPayment: (payment: Omit<RecurringPayment, 'id' | 'paused'>) => void
   updateRecurringPayment: (id: string, updates: Partial<RecurringPayment>) => void
   toggleRecurringPause: (id: string, paused: boolean) => void
   stopRecurringPayment: (id: string) => void
   updateSettings: (updates: Partial<UserSettings>) => void
-  clearAllData: () => void
-  loadDemoData: () => void
+  clearAllData: () => Promise<void> | void
   clearData: () => void
   formatCurrency: (amount: number) => string
   fetchBudgetsForMonth: (month: string, force?: boolean) => Promise<void>
@@ -238,6 +218,8 @@ const mapApiReceipt = (rcpt: ApiReceipt): Receipt => ({
 
 const mapApiBudget = (b: ApiBudget, currency?: string): Budget => ({
   month: b.month || new Date().toISOString().slice(0, 7),
+  startMonth: b.startMonth ?? b.month ?? null,
+  endMonth: b.endMonth ?? null,
   categoryId: b.categoryId,
   limit: fromMinor(b.limit, b.currency || currency),
   rollover: b.rollover ?? false,
@@ -278,15 +260,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const fetchedBudgetMonthsRef = useRef<Set<string>>(new Set())
   const [recurringPayments, setRecurringPayments] = useState<RecurringPayment[]>([])
   const [billInstances, setBillInstances] = useState<BillInstance[]>([])
-  const [ious, setIOUs] = useState<IOU[]>([])
-  const [investments, setInvestments] = useState<Investment[]>([])
-  const [fintualGoals, setFintualGoals] = useState<FintualGoal[]>([])
   const [receipts, setReceipts] = useState<Receipt[]>([])
   const [settings, setSettings] = useState<UserSettings>({
     currency: 'CLP',
     weekStartDay: 0,
     theme: 'system',
-    demoMode: false,
   })
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     isOnline: true,
@@ -295,8 +273,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   })
   const [authToken, setAuthTokenState] = useState<string | null>(null)
   const [user, setUser] = useState<User>({
-    name: 'Demo User',
-    email: 'demo@ledger.app',
+    name: '',
+    email: '',
   })
   
   const currencyCode = settings.currency
@@ -324,7 +302,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem(TOKEN_STORAGE_KEY)
     if (stored) {
       setAuthTokenState(stored)
-      setSettings(prev => ({ ...prev, demoMode: false }))
     }
   }, [])
 
@@ -385,7 +362,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setReceipts(apiReceipts.map(mapApiReceipt))
       setSettings(prev => ({
         ...prev,
-        demoMode: false,
         currency: (currencyFromUser || detectedCurrency || prev.currency || 'CLP').toUpperCase(),
       }))
       setSyncStatus({
@@ -461,12 +437,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const filtered = monthList.filter(b => b.categoryId !== categoryId)
       return {
         ...prev,
-        [month]: [...filtered, { month, categoryId, limit, rollover, rolloverTargetCategoryId, purpose, carryForwardEnabled, isTerminal, objectiveId }],
+        [month]: [...filtered, { month, startMonth: month, endMonth: null, categoryId, limit, rollover, rolloverTargetCategoryId, purpose, carryForwardEnabled, isTerminal, objectiveId }],
       }
     })
     if (authToken) {
       const payload: ApiBudget = {
         month,
+        startMonth: month,
+        endMonth: null,
         categoryId,
         limit: toMinor(limit, settings.currency),
         rollover,
@@ -615,8 +593,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
-  const addCategory = useCallback(async (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null }) => {
-    const currentMonth = new Date().toISOString().slice(0, 7)
+  const addCategory = useCallback(async (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null; budgetMonth?: string }) => {
+    const currentMonth = category.budgetMonth || new Date().toISOString().slice(0, 7)
     const addLocal = (cat: Category) => setCategories(prev => [...prev, cat])
     const base: Category = {
       ...category,
@@ -629,7 +607,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (category.monthlyBudget) {
         setBudgets(prev => {
           const monthList = prev[currentMonth] || []
-          return { ...prev, [currentMonth]: [...monthList, { month: currentMonth, categoryId: base.id, limit: category.monthlyBudget, rollover: category.rollover ?? false, rolloverTargetCategoryId: category.rolloverTargetCategoryId ?? null }] }
+          return { ...prev, [currentMonth]: [...monthList, { month: currentMonth, startMonth: currentMonth, endMonth: null, categoryId: base.id, limit: category.monthlyBudget, rollover: category.rollover ?? false, rolloverTargetCategoryId: category.rolloverTargetCategoryId ?? null }] }
         })
       }
       return base.id
@@ -668,7 +646,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setBudgets(prev => {
         const monthList = prev[month] || []
         const filtered = monthList.filter(b => b.categoryId !== id)
-        return { ...prev, [month]: [...filtered, { month, categoryId: id, limit: updates.monthlyBudget ?? 0, rollover: updates.rollover ?? false, rolloverTargetCategoryId: updates.rolloverTargetCategoryId ?? null }] }
+        return { ...prev, [month]: [...filtered, { month, startMonth: month, endMonth: null, categoryId: id, limit: updates.monthlyBudget ?? 0, rollover: updates.rollover ?? false, rolloverTargetCategoryId: updates.rolloverTargetCategoryId ?? null }] }
       })
     }
 
@@ -690,44 +668,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [authToken, upsertBudget])
-
-  const addIOU = useCallback((iou: Omit<IOU, 'id' | 'createdAt' | 'settledAt'>) => {
-    const newIOU: IOU = {
-      ...iou,
-      id: `iou-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      settledAt: null,
-    }
-    setIOUs(prev => [newIOU, ...prev])
-  }, [])
-
-  const settleIOU = useCallback((id: string) => {
-    setIOUs(prev =>
-      prev.map(i =>
-        i.id === id
-          ? { ...i, status: 'settled' as const, settledAt: new Date().toISOString() }
-          : i
-      )
-    )
-  }, [])
-
-  const addInvestment = useCallback((investment: Omit<Investment, 'id'>) => {
-    const newInvestment: Investment = {
-      ...investment,
-      id: `inv-${Date.now()}`,
-    }
-    setInvestments(prev => [...prev, newInvestment])
-  }, [])
-
-  const updateInvestment = useCallback((id: string, updates: Partial<Investment>) => {
-    setInvestments(prev =>
-      prev.map(inv => (inv.id === id ? { ...inv, ...updates } : inv))
-    )
-  }, [])
-
-  const deleteInvestment = useCallback((id: string) => {
-    setInvestments(prev => prev.filter(inv => inv.id !== id))
-  }, [])
 
   const addRecurringPayment = useCallback((payment: Omit<RecurringPayment, 'id' | 'paused'>) => {
     const newPayment: RecurringPayment = { ...payment, id: `rec-${Date.now()}`, paused: false }
@@ -800,44 +740,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSettings(prev => ({ ...prev, ...updates }))
   }, [])
 
-  const loadDemoData = useCallback(() => {
-    setTransactions(demoTransactions)
-    setCategories(demoCategories)
-    const demoMonth = new Date().toISOString().slice(0, 7)
-    setBudgets({
-      [demoMonth]: demoCategories.map(c => ({
-        month: demoMonth,
-        categoryId: c.id,
-        limit: c.monthlyBudget,
-        rollover: c.rollover,
-        rolloverTargetCategoryId: c.rolloverTargetCategoryId ?? null,
-      })),
-    })
-    setRecurringPayments(demoRecurringPayments)
-    setBillInstances(demoBillInstances)
-    setIOUs(demoIOUs)
-    setInvestments(demoInvestments)
-    setFintualGoals(demoFintualGoals)
-    setObjectives([])
-    setReceipts([])
-    setSettings(prev => ({ ...prev, demoMode: true }))
-  }, [])
-
   const clearData = useCallback(() => {
     setTransactions([])
     setCategories([])
     setBudgets({})
     setRecurringPayments([])
     setBillInstances([])
-    setIOUs([])
-    setInvestments([])
-    setFintualGoals([])
     setObjectives([])
     setReceipts([])
-    setSettings(prev => ({ ...prev, demoMode: false }))
   }, [])
 
-  const clearAllData = clearData
+  const clearAllData = useCallback(async () => {
+    if (authToken) {
+      await deleteCurrentUserData(authToken)
+    }
+    clearData()
+  }, [authToken, clearData])
 
   const setAuthToken = useCallback((token: string | null) => {
     if (typeof window !== 'undefined') {
@@ -996,9 +914,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         objectives,
         recurringPayments,
         billInstances,
-        ious,
-        investments,
-        fintualGoals,
         receipts,
         settings,
         syncStatus,
@@ -1025,11 +940,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         completeObjective: completeObjectiveHandler,
         deleteObjective: deleteObjectiveHandler,
         refreshObjectives,
-        addIOU,
-        settleIOU,
-        addInvestment,
-        updateInvestment,
-        deleteInvestment,
         addRecurringPayment,
         updateRecurringPayment,
         toggleRecurringPause,
@@ -1041,7 +951,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         deleteReceipt: deleteReceiptHandler,
         updateSettings,
         clearAllData,
-        loadDemoData,
         clearData,
         formatCurrency,
         fetchBudgetsForMonth,

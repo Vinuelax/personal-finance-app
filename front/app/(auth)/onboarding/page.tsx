@@ -5,20 +5,17 @@ import React from "react"
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
-import { 
-  Wallet, 
-  FolderPlus, 
-  Calendar, 
-  Building2, 
-  Receipt, 
+import {
+  Wallet,
+  FolderPlus,
+  Calendar,
+  Building2,
+  Receipt,
   TrendingUp,
   Check,
   ArrowRight,
-  Sparkles
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -34,7 +31,6 @@ interface OnboardingStep {
 
 export default function OnboardingPage() {
   const router = useRouter()
-  const [demoMode, setDemoMode] = useState(false)
   const [steps, setSteps] = useState<OnboardingStep[]>([
     {
       id: 'categories',
@@ -88,11 +84,7 @@ export default function OnboardingPage() {
   }
 
   const handleContinue = () => {
-    if (demoMode) {
-      router.push('/?demo=true')
-    } else {
-      router.push('/')
-    }
+    router.push('/')
   }
 
   const handleSkip = () => {
@@ -123,30 +115,6 @@ export default function OnboardingPage() {
         <h1 className="text-2xl font-bold">Set up your account</h1>
         <p className="text-muted-foreground mt-1">Complete these steps to get the most out of Ledger</p>
       </div>
-
-      {/* Demo Mode Toggle */}
-      <Card className="mb-6 border-primary/20 bg-primary/5">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center">
-                <Sparkles className="h-4 w-4 text-primary" />
-              </div>
-              <div>
-                <Label htmlFor="demo-mode" className="text-sm font-medium cursor-pointer">
-                  Demo Mode
-                </Label>
-                <p className="text-xs text-muted-foreground">Load sample data to explore</p>
-              </div>
-            </div>
-            <Switch
-              id="demo-mode"
-              checked={demoMode}
-              onCheckedChange={setDemoMode}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Steps */}
       <div className="flex-1 space-y-3">
@@ -207,7 +175,7 @@ export default function OnboardingPage() {
       {/* Actions */}
       <div className="pt-6 space-y-3">
         <Button size="lg" className="w-full" onClick={handleContinue}>
-          {demoMode ? 'Start with demo data' : 'Continue'}
+          Continue
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
         <Button variant="ghost" size="lg" className="w-full" onClick={handleSkip}>
