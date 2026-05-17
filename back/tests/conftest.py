@@ -1,16 +1,14 @@
+import binascii
+import hashlib
 import os
-import shutil
-import tempfile
-from pathlib import Path
+import secrets
+from typing import Iterator
 
 import pytest
 import httpx
 import anyio
 from httpx import ASGITransport
-
-# Ensure we import the app from the back package
-from app.main import app
-from utils.deps import create_access_token
+from testcontainers.postgres import PostgresContainer
 
 
 class SyncASGIClient:
@@ -19,14 +17,14 @@ class SyncASGIClient:
     def __init__(self, app, base_prefix: str = ""):
         self.transport = ASGITransport(app=app)
         self.base_url = "http://testserver" + base_prefix
-        self.auth_header = {}
+        self.auth_header: dict = {}
 
     def request(self, method: str, url: str, **kwargs):
         async def _do():
             async with httpx.AsyncClient(transport=self.transport, base_url=self.base_url) as client:
                 headers = kwargs.pop("headers", {})
-                merged_headers = {**self.auth_header, **headers}
-                return await client.request(method, url, headers=merged_headers, **kwargs)
+                merged = {**self.auth_header, **headers}
+                return await client.request(method, url, headers=merged, **kwargs)
         return anyio.run(_do)
 
     def get(self, url: str, **kwargs):
@@ -45,27 +43,113 @@ class SyncASGIClient:
         return self.request("DELETE", url, **kwargs)
 
 
-def copy_fixture(tmpdir: Path):
-    # copy the jsonl fixture into the tmp dir and point DB_JSON_PATH to it
-    src = Path(__file__).resolve().parent.parent / "data" / "dummy_db.jsonl"
-    dest = tmpdir / "dummy_db.jsonl"
-    shutil.copy(src, dest)
-    return dest
+TEST_USER_ID = "u_001"
+TEST_USER_EMAIL = "user@example.com"
+TEST_USER_PASSWORD = "pw"
+PBKDF2_ITERATIONS = 100_000
+
+# Tables to truncate between tests. Order doesn't matter with CASCADE, but the
+# list documents which entities the suite touches.
+_RESET_TABLES = (
+    "objective_month_plans",
+    "budget_rule_month_overrides",
+    "budget_rules",
+    "budgets",
+    "bills",
+    "recurring_rules",
+    "receipts",
+    "transactions",
+    "investment_txs",
+    "fund_prices",
+    "funds",
+    "objectives",
+    "categories",
+    "users",
+)
+
+
+@pytest.fixture(scope="session")
+def _postgres_url() -> Iterator[str]:
+    """Spin up a real Postgres for the whole test session via testcontainers."""
+    with PostgresContainer("postgres:16-alpine") as pg:
+        raw_url = pg.get_connection_url()
+        # testcontainers defaults to the psycopg2 driver string; the app uses psycopg3.
+        url = raw_url.replace("postgresql+psycopg2://", "postgresql+psycopg://")
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+        os.environ["DATABASE_URL"] = url
+        os.environ["DB_BACKEND"] = "postgres"
+        # Schema comes from SQLAlchemy models, not from the migration files.
+        os.environ["DB_SKIP_SCHEMA_CHECK"] = "true"
+        os.environ.setdefault("AUTH_SECRET", "test-secret")
+        os.environ.setdefault("AUTH_ISSUER", "ledger-backend-tests")
+        yield url
+
+
+@pytest.fixture(scope="session")
+def _schema(_postgres_url) -> None:
+    """Create the full schema once per session."""
+    # Import inside the fixture so the env vars set above are visible to
+    # back/db/session.py at module load time.
+    from db.models import Base
+    from db.session import engine
+
+    Base.metadata.create_all(bind=engine)
+
+
+def _seed_user(session) -> None:
+    from db import models
+
+    salt = secrets.token_bytes(16)
+    derived_hex = binascii.hexlify(
+        hashlib.pbkdf2_hmac("sha256", TEST_USER_PASSWORD.encode(), salt, PBKDF2_ITERATIONS)
+    ).decode()
+    session.add(models.User(
+        id=TEST_USER_ID,
+        email=TEST_USER_EMAIL,
+        password_algo="PBKDF2-HMAC-SHA256",
+        password_salt=salt.hex(),
+        password_iterations=PBKDF2_ITERATIONS,
+        password_hash=derived_hex,
+        currency="CLP",
+    ))
+
+
+def _seed_categories(session) -> None:
+    from db import models
+
+    seeds = [
+        ("cat_groceries", "Groceries"),
+        ("cat_dining", "Dining"),
+        ("cat_transport", "Transport"),
+    ]
+    for cid, name in seeds:
+        session.add(models.Category(
+            id=cid,
+            user_id=TEST_USER_ID,
+            name=name,
+            kind="expense",
+        ))
 
 
 @pytest.fixture()
-def client(monkeypatch):
-    with tempfile.TemporaryDirectory() as tmp:
-        tmpdir = Path(tmp)
-        json_path = copy_fixture(tmpdir)
-        monkeypatch.setenv("DB_BACKEND", "jsonl")
-        monkeypatch.setenv("DB_JSON_PATH", str(json_path))
-        # default auth config
-        monkeypatch.setenv("DEFAULT_USER_EMAIL", "user@example.com")
-        monkeypatch.setenv("DEFAULT_USER_PASSWORD", "pw")
-        monkeypatch.setenv("DEFAULT_USER_ID", "u_001")
-        client = SyncASGIClient(app, base_prefix="/api/v1")
-        # obtain auth token
-        token = create_access_token({"sub": "test@example.com", "user_id": "u_001"})
-        client.auth_header = {"Authorization": f"Bearer {token}"}
-        yield client
+def client(_schema) -> Iterator[SyncASGIClient]:
+    from sqlalchemy import text
+
+    from app.main import app
+    from db.session import SessionLocal
+    from utils.deps import create_access_token
+
+    with SessionLocal() as session:
+        session.execute(text(
+            "TRUNCATE TABLE " + ", ".join(_RESET_TABLES) + " RESTART IDENTITY CASCADE"
+        ))
+        _seed_user(session)
+        _seed_categories(session)
+        session.commit()
+
+    cli = SyncASGIClient(app, base_prefix="/api/v1")
+    token = create_access_token({"sub": TEST_USER_EMAIL, "user_id": TEST_USER_ID})
+    cli.auth_header = {"Authorization": f"Bearer {token}"}
+    yield cli
