@@ -1474,7 +1474,7 @@ function TransactionsContent() {
 
   return (
     <AppShell title="Transactions" showSearch>
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={(v) => isValidTransactionsTab(v) && setActiveTab(v)} className="w-full">
         <div className="sticky top-14 z-30 bg-background border-b">
           <TabsList className="w-full justify-start rounded-none border-0 h-12 px-4 lg:px-6">
             <TabsTrigger value="transactions" className="relative">

@@ -65,7 +65,7 @@ function ObjectiveDialog({
   const [forceReplace, setForceReplace] = useState(false)
   const [totalAmount, setTotalAmount] = useState<string>(defaultValues?.totalAmount ? String(defaultValues.totalAmount) : '')
   const [plans, setPlans] = useState<PlanRow[]>(
-    sortPlans(defaultValues?.plans || [{ month: new Date().toISOString().slice(0, 7), amount: 0, kind: 'SPEND', isLastMonth: false }]).map((p, idx) => ({
+    sortPlans(defaultValues?.plans || [{ month: new Date().toISOString().slice(0, 7), amount: 0, kind: 'SPEND' as const, isLastMonth: false }]).map((p, idx) => ({
       ...p,
       isLastMonth: false,
       id: `plan-${idx}-${p.month}`,
@@ -81,7 +81,7 @@ function ObjectiveDialog({
     setCategoryId(defaultValues?.categoryId || 'auto')
     setForceReplace(false)
     setTotalAmount(defaultValues?.totalAmount ? String(defaultValues.totalAmount) : '')
-    setPlans(sortPlans(defaultValues?.plans || [{ month: new Date().toISOString().slice(0, 7), amount: 0, kind: 'SPEND', isLastMonth: false }]).map((p, idx) => ({
+    setPlans(sortPlans(defaultValues?.plans || [{ month: new Date().toISOString().slice(0, 7), amount: 0, kind: 'SPEND' as const, isLastMonth: false }]).map((p, idx) => ({
       ...p,
       isLastMonth: false,
       id: `plan-${idx}-${p.month}`,

@@ -111,7 +111,7 @@ function CalendarContent() {
         dateStr,
         isCurrentMonth: false,
         isToday: false,
-        transactions: api ? api.transactions : transactions.filter(t => t.date === dateStr),
+        transactions: transactions.filter(t => t.date === dateStr),
         bills: billsWithNames.filter(b => b.dueDate === dateStr),
         totalExpense: api ? api.expense / 100 : transactions
           .filter(t => t.date === dateStr && t.amount < 0)
@@ -132,7 +132,7 @@ function CalendarContent() {
         dateStr,
         isCurrentMonth: true,
         isToday: date.getTime() === today.getTime(),
-        transactions: api ? api.transactions : transactions.filter(t => t.date === dateStr),
+        transactions: transactions.filter(t => t.date === dateStr),
         bills: billsWithNames.filter(b => b.dueDate === dateStr),
         totalExpense: api ? api.expense / 100 : transactions
           .filter(t => t.date === dateStr && t.amount < 0)
@@ -154,7 +154,7 @@ function CalendarContent() {
         dateStr,
         isCurrentMonth: false,
         isToday: false,
-        transactions: api ? api.transactions : transactions.filter(t => t.date === dateStr),
+        transactions: transactions.filter(t => t.date === dateStr),
         bills: billsWithNames.filter(b => b.dueDate === dateStr),
         totalExpense: api ? api.expense / 100 : transactions
           .filter(t => t.date === dateStr && t.amount < 0)

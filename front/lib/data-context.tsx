@@ -113,6 +113,7 @@ interface DataContextType {
   updateRecurringPayment: (id: string, updates: Partial<RecurringPayment>) => void
   toggleRecurringPause: (id: string, paused: boolean) => void
   stopRecurringPayment: (id: string) => void
+  updateBillInstance: (id: string, updates: Partial<BillInstance>) => void
   updateSettings: (updates: Partial<UserSettings>) => void
   clearAllData: () => Promise<void> | void
   clearData: () => void
@@ -486,7 +487,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const date = txn.date
       const payload: Partial<ApiTransaction> = {}
       if (updates.merchant !== undefined) payload.merchant = updates.merchant
-      if (updates.description !== undefined) payload.description = updates.description
       if (updates.amount !== undefined) payload.amount = toMinor(updates.amount, settings.currency)
       if (updates.category !== undefined) payload.categoryId = updates.category
       if (updates.notes !== undefined) payload.notes = updates.notes
