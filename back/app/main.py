@@ -39,6 +39,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+_SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+}
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    for header, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
+
+
 app.include_router(main_router.public_router, prefix="/api/v1")
 app.include_router(main_router.protected_router, prefix="/api/v1")
 
