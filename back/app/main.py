@@ -16,13 +16,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Ledger Backend", version="0.1.0", lifespan=lifespan)
 
-origins_env = os.getenv("BACKEND_CORS_ORIGINS", "")
-origins = [o.strip() for o in origins_env.split(",") if o.strip()] or ["*"]
-allow_credentials = origins != ["*"]
+
+def _resolve_cors_origins() -> list[str]:
+    raw = os.getenv("BACKEND_CORS_ORIGINS", "")
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    if origins:
+        return origins
+    if os.getenv("ENVIRONMENT", "development").lower() == "development":
+        return ["http://localhost:3000", "http://localhost:3001"]
+    raise RuntimeError(
+        "BACKEND_CORS_ORIGINS is required when ENVIRONMENT != 'development'. "
+        "Set it to a comma-separated list of allowed origins."
+    )
+
+
+_cors_origins = _resolve_cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=allow_credentials,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
