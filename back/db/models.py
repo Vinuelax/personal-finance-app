@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     String,
@@ -20,7 +20,7 @@ Base = declarative_base()
 JSON_TYPE = JSON().with_variant(JSONB, "postgresql")
 
 def now_ts():
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
