@@ -17,7 +17,8 @@ from utils.db import DB
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "CLP")
-PBKDF2_ITERATIONS = int(os.getenv("AUTH_PBKDF2_ITERATIONS", "100000"))
+# OWASP 2023 minimum for PBKDF2-HMAC-SHA256.
+PBKDF2_ITERATIONS = int(os.getenv("AUTH_PBKDF2_ITERATIONS", "600000"))
 PBKDF2_ALGO = "PBKDF2-HMAC-SHA256"
 
 
@@ -68,6 +69,25 @@ def _verify_password(password: str, user: dict) -> bool:
     return secrets.compare_digest(derived, user.get("passwordHash", ""))
 
 
+def _maybe_rehash_password(db: DB, user: dict, password: str) -> None:
+    """If the stored hash uses fewer iterations than the current floor,
+    re-derive with a fresh salt at the current iteration count.
+
+    Lets us raise PBKDF2_ITERATIONS without forcing a password reset for
+    everyone — each user's hash gets upgraded the next time they log in.
+    """
+    stored = int(user.get("passwordIterations") or 0)
+    if stored >= PBKDF2_ITERATIONS:
+        return
+    salt = secrets.token_bytes(16)
+    db.update_user(user["userId"], {
+        "passwordAlgo": PBKDF2_ALGO,
+        "passwordSalt": salt.hex(),
+        "passwordIterations": PBKDF2_ITERATIONS,
+        "passwordHash": _derive_password(password, salt, PBKDF2_ITERATIONS),
+    })
+
+
 def _new_user_item(email: str, password: str) -> dict:
     user_id = f"u_{uuid.uuid4().hex[:8]}"
     salt = secrets.token_bytes(16)
@@ -112,6 +132,8 @@ def login(body: AuthRequest, db: DB = Depends(get_db)):
     )
     if not valid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    _maybe_rehash_password(db, user, body.password)
 
     token = create_access_token(
         {

@@ -46,7 +46,9 @@ class SyncASGIClient:
 TEST_USER_ID = "u_001"
 TEST_USER_EMAIL = "user@example.com"
 TEST_USER_PASSWORD = "pw"
-PBKDF2_ITERATIONS = 100_000
+# Below the AUTH_PBKDF2_ITERATIONS floor on purpose so the rehash-on-login
+# path is exercised by the auth tests.
+PBKDF2_ITERATIONS = 1_000
 
 # Tables to truncate between tests. Order doesn't matter with CASCADE, but the
 # list documents which entities the suite touches.
@@ -85,6 +87,8 @@ def _postgres_url() -> Iterator[str]:
         os.environ["ENVIRONMENT"] = "development"
         os.environ.setdefault("AUTH_SECRET", "test-secret")
         os.environ.setdefault("AUTH_ISSUER", "ledger-backend-tests")
+        # Keep PBKDF2 cheap in tests — the production floor is 600k.
+        os.environ.setdefault("AUTH_PBKDF2_ITERATIONS", "10000")
         yield url
 
 
