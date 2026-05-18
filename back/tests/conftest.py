@@ -82,6 +82,7 @@ def _postgres_url() -> Iterator[str]:
         os.environ["DB_BACKEND"] = "postgres"
         # Schema comes from SQLAlchemy models, not from the migration files.
         os.environ["DB_SKIP_SCHEMA_CHECK"] = "true"
+        os.environ["ENVIRONMENT"] = "development"
         os.environ.setdefault("AUTH_SECRET", "test-secret")
         os.environ.setdefault("AUTH_ISSUER", "ledger-backend-tests")
         yield url

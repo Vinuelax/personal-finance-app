@@ -12,8 +12,22 @@ logger = logging.getLogger("auth")
 
 from utils.db import DB, get_session
 
-# JWT settings
-SECRET_KEY = os.getenv("AUTH_SECRET", "dev-secret")
+
+def _load_auth_secret() -> str:
+    secret = os.getenv("AUTH_SECRET")
+    if secret:
+        return secret
+    env = os.getenv("ENVIRONMENT", "development").lower()
+    if env != "development":
+        raise RuntimeError(
+            "AUTH_SECRET is required when ENVIRONMENT != 'development'. "
+            "Set it in the deploy env (Lambda config or .env.prod)."
+        )
+    logger.warning("AUTH_SECRET unset; using insecure development fallback")
+    return "dev-secret"
+
+
+SECRET_KEY = _load_auth_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "60"))
 ISSUER = os.getenv("AUTH_ISSUER", "ledger-backend")
