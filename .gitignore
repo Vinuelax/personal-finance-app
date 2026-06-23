@@ -157,3 +157,6 @@ infra/.bootstrap.plan.json
 infra/bootstrap_summary.json
 .secret
 infra/.terraform.lock.hcl
+
+# Playwright MCP debug artifacts
+.playwright-mcp/
