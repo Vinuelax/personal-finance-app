@@ -1,0 +1,9 @@
+# Local-only override: launch Next directly so pnpm 11's pre-run build-script
+# gate (ERR_PNPM_IGNORED_BUILDS) is bypassed. node_modules must already be
+# installed in the web-dev volume. Not committed.
+services:
+  web-dev:
+    command:
+      - sh
+      - -c
+      - exec node_modules/.bin/next dev --hostname 0.0.0.0 --port 3000 --webpack
