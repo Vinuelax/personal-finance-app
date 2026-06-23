@@ -23,8 +23,18 @@ def test_receipts_crud(client: TestClient):
     assert resp.status_code == 200
     assert resp.json().get("status") == "complete"
 
-    # link to a transaction id and ensure it is reflected
-    link_payload = payload | {"status": "complete", "transactionId": "txn_link_test"}
+    # link to a real transaction and ensure it is reflected
+    txn_resp = client.post("/transactions", json={
+        "date": "2026-02-01",
+        "merchant": "Linked Merchant",
+        "amount": -9999,
+        "currency": "CLP",
+        "source": "manual",
+    })
+    assert txn_resp.status_code == 200
+    txn_id = txn_resp.json()["txnId"]
+
+    link_payload = payload | {"status": "complete", "transactionId": txn_id}
     resp = client.patch(f"/receipts/{rcpt_id}", json=link_payload)
     assert resp.status_code == 200
-    assert resp.json().get("transactionId") == "txn_link_test"
+    assert resp.json().get("transactionId") == txn_id
