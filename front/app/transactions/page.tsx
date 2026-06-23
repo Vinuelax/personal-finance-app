@@ -905,26 +905,30 @@ const CATEGORY_COLORS = [
 function AddBudgetDialog({ open, onClose, onAdd }: AddBudgetDialogProps) {
   const [name, setName] = useState('')
   const [budget, setBudget] = useState('')
+  const [kind, setKind] = useState<'expense' | 'income'>('expense')
   const [selectedIcon, setSelectedIcon] = useState('shopping-cart')
   const [selectedColor, setSelectedColor] = useState(CATEGORY_COLORS[0])
   const [rollover, setRollover] = useState(false)
   const [rolloverTarget, setRolloverTarget] = useState('none')
   const [purpose, setPurpose] = useState('')
+  const isIncome = kind === 'income'
 
   const handleAdd = async () => {
     if (name && budget) {
       const createdId = await onAdd({
         name,
-        icon: selectedIcon,
+        kind,
+        icon: isIncome ? 'repeat' : selectedIcon,
         color: selectedColor,
         monthlyBudget: parseFloat(budget),
-        rollover,
-        rolloverTargetCategoryId: rollover ? (rolloverTarget === 'none' ? null : rolloverTarget) : null,
+        rollover: isIncome ? false : rollover,
+        rolloverTargetCategoryId: !isIncome && rollover ? (rolloverTarget === 'none' ? null : rolloverTarget) : null,
         purpose,
       })
       if (!createdId) return
       setName('')
       setBudget('')
+      setKind('expense')
       setSelectedIcon('shopping-cart')
       setSelectedColor(CATEGORY_COLORS[0])
       setRollover(false)
@@ -938,20 +942,39 @@ function AddBudgetDialog({ open, onClose, onAdd }: AddBudgetDialogProps) {
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add New Budget Category</DialogTitle>
+          <DialogTitle>Add {isIncome ? 'Income' : 'Budget'} Category</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Type</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={kind === 'expense' ? 'default' : 'outline'}
+                onClick={() => setKind('expense')}
+              >
+                Expense
+              </Button>
+              <Button
+                type="button"
+                variant={kind === 'income' ? 'default' : 'outline'}
+                onClick={() => setKind('income')}
+              >
+                Income
+              </Button>
+            </div>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="name">Category Name</Label>
             <Input
               id="name"
-              placeholder="e.g., Groceries"
+              placeholder={isIncome ? 'e.g., Salary' : 'e.g., Groceries'}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="budget">Monthly Budget</Label>
+            <Label htmlFor="budget">{isIncome ? 'Expected monthly income' : 'Monthly Budget'}</Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
               <Input
@@ -974,7 +997,7 @@ function AddBudgetDialog({ open, onClose, onAdd }: AddBudgetDialogProps) {
               onChange={(e) => setPurpose(e.target.value)}
             />
           </div>
-          <div className="space-y-2">
+          <div className={cn("space-y-2", isIncome && "hidden")}>
             <Label>Icon</Label>
             <div className="grid grid-cols-4 gap-2">
               {CATEGORY_ICONS.map(({ icon, emoji }) => (
@@ -1154,6 +1177,22 @@ export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBud
     return totals
   }, [monthTransactions])
 
+  const incomeReceivedByCategory = useMemo(() => {
+    const totals: Record<string, number> = {}
+    monthTransactions.forEach(t => {
+      if (t.amount <= 0) return
+      if (t.splits && t.splits.length > 0) {
+        t.splits.forEach(s => {
+          if (!s.categoryId) return
+          totals[s.categoryId] = (totals[s.categoryId] || 0) + Math.abs(s.amount ?? 0)
+        })
+      } else if (t.category) {
+        totals[t.category] = (totals[t.category] || 0) + t.amount
+      }
+    })
+    return totals
+  }, [monthTransactions])
+
   const monthCategories = useMemo(
     () => selectedMonthBudgets
       .map(budget => {
@@ -1167,6 +1206,28 @@ export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBud
       .filter((cat): cat is Category => cat !== null),
     [selectedMonthBudgets, categories, spendingByCategory, rolloverIntoTargets, budgetByCategory],
   )
+
+  // Predicted balance = plan only (sum of budgets); real balance = actuals this month.
+  const { predictedIncome, predictedExpense } = useMemo(() => {
+    let inc = 0, exp = 0
+    selectedMonthBudgets.forEach(b => {
+      const cat = categories.find(c => c.id === b.categoryId)
+      if (cat?.kind === 'income') inc += b.limit
+      else exp += b.limit
+    })
+    return { predictedIncome: inc, predictedExpense: exp }
+  }, [selectedMonthBudgets, categories])
+  const predictedBalance = predictedIncome - predictedExpense
+
+  const actualIncome = useMemo(
+    () => monthTransactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0),
+    [monthTransactions],
+  )
+  const actualExpense = useMemo(
+    () => monthTransactions.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0),
+    [monthTransactions],
+  )
+  const realBalance = actualIncome - actualExpense
   
   const sortedCategories = useMemo(
     () => [...monthCategories].sort((a, b) => {
@@ -1185,10 +1246,19 @@ export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBud
     [monthCategories],
   )
 
-  const totalBudget = monthCategories.reduce((sum, c) => sum + c.monthlyBudget, 0)
-  const totalSpent = monthCategories.reduce((sum, c) => sum + c.currentMonthSpent, 0)
+  const expenseCategories = useMemo(() => sortedCategories.filter(c => c.kind !== 'income'), [sortedCategories])
+  const incomeCategories = useMemo(
+    () => sortedCategories
+      .filter(c => c.kind === 'income')
+      .map(c => ({ ...c, received: incomeReceivedByCategory[c.id] || 0 })),
+    [sortedCategories, incomeReceivedByCategory],
+  )
+
+  const totalBudget = expenseCategories.reduce((sum, c) => sum + c.monthlyBudget, 0)
+  const totalSpent = expenseCategories.reduce((sum, c) => sum + c.currentMonthSpent, 0)
   const prevHasBudgets = (budgetsByMonth[prevMonthKey] || []).length > 0
   const hasBudgets = selectedMonthBudgets.length > 0
+  const isFutureMonth = selectedMonth > currentMonthStart
 
   const goMonth = (delta: number) => {
     setSelectedMonth(prev => {
@@ -1197,7 +1267,13 @@ export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBud
       return new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth(), 1))
     })
   }
-  const canGoForward = selectedMonth < currentMonthStart
+  // Allow planning up to 12 months ahead.
+  const maxForwardMonth = useMemo(() => {
+    const d = new Date(currentMonthStart)
+    d.setUTCMonth(d.getUTCMonth() + 12)
+    return d
+  }, [currentMonthStart])
+  const canGoForward = selectedMonth < maxForwardMonth
 
   const handleAddCategory = async (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null; budgetMonth?: string }) => {
     const normalized = category.name.trim().toLowerCase()
@@ -1235,12 +1311,7 @@ export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBud
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <div className="text-right">
-          <h2 className="font-semibold">Budgets</h2>
-          <p className="text-sm text-muted-foreground">
-            {formatCurrency(totalSpent)} of {formatCurrency(totalBudget)} spent
-          </p>
-        </div>
+        <h2 className="font-semibold">Budgets</h2>
         <Button variant="outline" size="sm" onClick={() => setIsAddOpen(true)} className="ml-auto">
           <Plus className="h-4 w-4 mr-2" />
           Add Budget
@@ -1252,8 +1323,74 @@ export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBud
         )}
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        {sortedCategories.map(category => {
+      <Card>
+        <CardContent className="p-4 grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Predicted balance</p>
+            <p className={cn("text-lg font-semibold", predictedBalance < 0 ? "text-negative" : "text-positive")}>
+              {formatCurrency(predictedBalance)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {formatCurrency(predictedIncome)} income − {formatCurrency(predictedExpense)} budgets
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">
+              Real balance{isFutureMonth ? '' : ' so far'}
+            </p>
+            <p className={cn("text-lg font-semibold", realBalance < 0 ? "text-negative" : "text-positive")}>
+              {formatCurrency(realBalance)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {formatCurrency(actualIncome)} in − {formatCurrency(actualExpense)} out
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {incomeCategories.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-muted-foreground">Income</h3>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {incomeCategories.map(category => {
+              const pct = category.monthlyBudget ? (category.received / category.monthlyBudget) * 100 : 0
+              const remaining = category.monthlyBudget - category.received
+              return (
+                <Card key={category.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setEditingCategory(category)}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="text-2xl">💰</span>
+                      <div className="flex-1">
+                        <h3 className="font-medium">{category.name}</h3>
+                        <p className="text-xs text-muted-foreground">
+                          {formatCurrency(category.received)} of {formatCurrency(category.monthlyBudget)} received
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium text-positive">{formatCurrency(Math.max(0, remaining))}</p>
+                        <p className="text-xs text-muted-foreground">{remaining > 0 ? 'to receive' : 'received'}</p>
+                      </div>
+                    </div>
+                    <Progress value={Math.min(pct, 100)} className="h-2 [&>div]:bg-positive" />
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {expenseCategories.length > 0 && (
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-sm font-semibold text-muted-foreground">Expenses</h3>
+            <p className="text-xs text-muted-foreground">
+              {formatCurrency(totalSpent)} of {formatCurrency(totalBudget)} spent
+            </p>
+          </div>
+        )}
+        <div className="grid gap-3 lg:grid-cols-2">
+        {expenseCategories.map(category => {
           const percentage = category.monthlyBudget
             ? (category.currentMonthSpent / category.monthlyBudget) * 100
             : 0
@@ -1306,6 +1443,7 @@ export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBud
             </Card>
           )
         })}
+        </div>
       </div>
 
       <BudgetEditDialog

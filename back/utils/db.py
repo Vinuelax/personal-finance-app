@@ -38,6 +38,7 @@ def _category_dict(c: models.Category) -> Dict[str, Any]:
         "categoryId": c.id,
         "name": c.name,
         "group": c.group,
+        "kind": c.kind,
         "icon": c.icon,
         "color": c.color,
         "createdAt": c.created_at.isoformat() if c.created_at else None,
@@ -235,6 +236,7 @@ class DB:
             user_id=user_id,
             name=payload["name"],
             group=payload.get("group"),
+            kind=payload.get("kind") or "expense",
             icon=payload.get("icon"),
             color=payload.get("color"),
         )
@@ -247,7 +249,7 @@ class DB:
         cat = self.session.get(models.Category, category_id)
         if not cat or cat.user_id != user_id:
             return None
-        for field in ("name", "group", "icon", "color"):
+        for field in ("name", "group", "kind", "icon", "color"):
             if field in payload:
                 setattr(cat, field, payload[field])
         self.session.commit()

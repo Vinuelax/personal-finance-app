@@ -45,6 +45,7 @@ export interface ApiCategory {
   categoryId: string
   name: string
   group?: string | null
+  kind?: string | null
   icon?: string | null
   color?: string | null
 }

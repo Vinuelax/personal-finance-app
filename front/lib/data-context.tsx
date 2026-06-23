@@ -174,6 +174,7 @@ const mapApiCategory = (cat: ApiCategory): Category => ({
   name: cat.name,
   icon: cat.icon || 'circle',
   color: cat.color || '#6b7280',
+  kind: (cat.kind as Category['kind']) || 'expense',
   monthlyBudget: 0,
   currentMonthSpent: 0,
   rollover: false,
@@ -616,6 +617,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const created = await createCategory(authToken, {
         name: category.name,
         group: null,
+        kind: category.kind || 'expense',
         icon: category.icon,
         color: category.color,
       })

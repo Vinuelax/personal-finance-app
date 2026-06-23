@@ -21,6 +21,7 @@ class CategoryIn(BaseModel):
 
     name: str = Field(..., description="Display name of the category")
     group: str | None = Field(None, description="Grouping label, e.g. Needs/Wants/Invest")
+    kind: str | None = Field(None, description="Category kind: expense|income|savings|investment|debt|transfer|mixed")
     icon: str | None = Field(None, description="Icon slug used by the frontend")
     color: str | None = Field(None, description="Color token used by the frontend")
 
@@ -39,6 +40,7 @@ class CategoryUpdate(BaseModel):
 
     name: str | None = Field(None, description="Display name of the category")
     group: str | None = Field(None, description="Grouping label, e.g. Needs/Wants/Invest")
+    kind: str | None = Field(None, description="Category kind: expense|income|savings|investment|debt|transfer|mixed")
     icon: str | None = Field(None, description="Icon slug used by the frontend")
     color: str | None = Field(None, description="Color token used by the frontend")
 
@@ -60,6 +62,7 @@ def api_list_categories(current_user=Depends(get_current_user), db: DB = Depends
             "categoryId": i.get("categoryId"),
             "name": i.get("name"),
             "group": i.get("group"),
+            "kind": i.get("kind"),
             "icon": i.get("icon"),
             "color": i.get("color"),
         }

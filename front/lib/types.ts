@@ -20,11 +20,14 @@ export interface Transaction {
   createdAt: string
 }
 
+export type CategoryKind = 'expense' | 'income' | 'savings' | 'investment' | 'debt' | 'transfer' | 'mixed'
+
 export interface Category {
   id: string
   name: string
   icon: string
   color: string
+  kind: CategoryKind
   monthlyBudget: number
   currentMonthSpent: number
   rollover: boolean
