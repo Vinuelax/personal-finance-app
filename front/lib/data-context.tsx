@@ -848,12 +848,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       })),
     }
     const created = await createObjectiveApi(authToken, apiPayload, force)
-    await refreshObjectives()
-    for (const p of payload.plans) {
-      await fetchBudgetsForMonth(p.month, true)
-    }
+    // Objectives can auto-create a category and generate budgets, so refresh
+    // everything (categories included) rather than just objectives/budgets.
+    await refreshFromBackend(authToken)
     return mapApiObjective(created, payload.currency || settings.currency)
-  }, [authToken, fetchBudgetsForMonth, refreshObjectives, settings.currency])
+  }, [authToken, refreshFromBackend, settings.currency])
 
   const updateObjectiveHandler = useCallback(async (
     objectiveId: string,
@@ -877,14 +876,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       })),
     }
     const updated = await updateObjectiveApi(authToken, objectiveId, apiPayload, force)
-    await refreshObjectives()
-    if (payload.plans) {
-      for (const p of payload.plans) {
-        await fetchBudgetsForMonth(p.month, true)
-      }
-    }
+    // May rename/auto-create a category and regenerate budgets; full refresh.
+    await refreshFromBackend(authToken)
     return mapApiObjective(updated, payload.currency || settings.currency)
-  }, [authToken, fetchBudgetsForMonth, refreshObjectives, settings.currency])
+  }, [authToken, refreshFromBackend, settings.currency])
 
   const completeObjectiveHandler = useCallback(async (objectiveId: string) => {
     if (!authToken) return
