@@ -608,6 +608,31 @@ class DB:
         self.session.commit()
         return True
 
+    def clear_user_data(self, user_id: str) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        delete_steps = [
+            ("objective_month_plans", delete(models.ObjectiveMonthPlan).where(
+                models.ObjectiveMonthPlan.objective_id.in_(
+                    select(models.Objective.id).where(models.Objective.user_id == user_id)
+                )
+            )),
+            ("budgets", delete(models.Budget).where(models.Budget.user_id == user_id)),
+            ("bills", delete(models.Bill).where(models.Bill.user_id == user_id)),
+            ("recurring_rules", delete(models.RecurringRule).where(models.RecurringRule.user_id == user_id)),
+            ("receipts", delete(models.Receipt).where(models.Receipt.user_id == user_id)),
+            ("transactions", delete(models.Transaction).where(models.Transaction.user_id == user_id)),
+            ("investment_txs", delete(models.InvestmentTx).where(models.InvestmentTx.user_id == user_id)),
+            ("fund_prices", delete(models.FundPrice).where(models.FundPrice.user_id == user_id)),
+            ("funds", delete(models.Fund).where(models.Fund.user_id == user_id)),
+            ("objectives", delete(models.Objective).where(models.Objective.user_id == user_id)),
+            ("categories", delete(models.Category).where(models.Category.user_id == user_id)),
+        ]
+        for key, stmt in delete_steps:
+            result = self.session.execute(stmt)
+            counts[key] = int(result.rowcount or 0)
+        self.session.commit()
+        return counts
+
     # ---------- Transactions ----------
     def list_transactions(
         self,

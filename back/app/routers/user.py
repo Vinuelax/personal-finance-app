@@ -17,6 +17,11 @@ class UpdateUserRequest(BaseModel):
     currency: str | None = Field(None, description="ISO 4217 currency code (e.g. CLP, USD)")
 
 
+class ClearUserDataResponse(BaseModel):
+    deleted: bool = Field(..., description="Whether any user-owned data rows were deleted")
+    counts: dict[str, int] = Field(..., description="Deleted row counts by entity type")
+
+
 def _load_user(db: DB, user_id: str) -> dict:
     user = db.get_user(user_id)
     if not user:
@@ -54,4 +59,13 @@ def update_me(body: UpdateUserRequest, current=Depends(get_current_user), db: DB
         userId=updated.get("userId"),
         email=updated.get("email"),
         currency=updated.get("currency"),
+    )
+
+
+@router.delete("/me/data", response_model=ClearUserDataResponse, summary="Delete account data")
+def delete_my_data(current=Depends(get_current_user), db: DB = Depends(get_db)):
+    counts = db.clear_user_data(current["user_id"])
+    return ClearUserDataResponse(
+        deleted=any(v > 0 for v in counts.values()),
+        counts=counts,
     )

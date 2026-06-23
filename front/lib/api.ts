@@ -375,3 +375,7 @@ export async function fetchCurrentUser(token: string) {
 export async function updateCurrentUser(token: string, payload: Partial<ApiUser>) {
   return apiFetch<ApiUser>('/user/me', 'PATCH', { token, body: JSON.stringify(payload) })
 }
+
+export async function deleteCurrentUserData(token: string) {
+  return apiFetch<{ deleted: boolean; counts: Record<string, number> }>('/user/me/data', 'DELETE', { token })
+}

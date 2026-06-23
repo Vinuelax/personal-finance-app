@@ -92,11 +92,11 @@ export default function SettingsPage() {
     router.push("/welcome")
   }
 
-  const handleDeleteAccount = () => {
+  const handleDeleteAccountData = async () => {
     if (deleteConfirmText === "DELETE") {
-      clearAllData()
-      localStorage.removeItem("ledger_onboarded")
-      router.push("/welcome")
+      await clearAllData()
+      setIsDeleteDialogOpen(false)
+      setDeleteConfirmText("")
     }
   }
 
@@ -327,14 +327,14 @@ export default function SettingsPage() {
               <DialogTrigger asChild>
                 <Button variant="outline" className="justify-start gap-3 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground bg-transparent">
                   <Trash2 className="h-4 w-4" />
-                  Delete Account
+                  Delete Account Data
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Delete Account</DialogTitle>
+                  <DialogTitle>Delete Account Data</DialogTitle>
                   <DialogDescription>
-                    This action cannot be undone. All your data will be permanently deleted.
+                    This action cannot be undone. It deletes transactions, budgets, categories, receipts, recurring data, and objectives, but keeps your account.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-col gap-4 py-4">
@@ -353,10 +353,10 @@ export default function SettingsPage() {
                   </Button>
                   <Button
                     variant="destructive"
-                    onClick={handleDeleteAccount}
+                    onClick={handleDeleteAccountData}
                     disabled={deleteConfirmText !== "DELETE"}
                   >
-                    Delete Account
+                    Delete Data
                   </Button>
                 </DialogFooter>
               </DialogContent>
