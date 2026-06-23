@@ -488,6 +488,10 @@ class DB:
             status=payload.get("status", "ACTIVE"),
         )
         self.session.add(obj)
+        # Flush so the objective row exists before inserting budgets that
+        # FK-reference it (Budget.objective_id has no ORM-level relationship,
+        # so the unit of work won't order the inserts on its own).
+        self.session.flush()
 
         for p in plans:
             amount = abs(int(p["amount"]))
