@@ -62,6 +62,13 @@ class ObjectiveOut(BaseModel):
     updatedAt: Optional[str] = None
 
 
+def _reject_duplicate_months(plans: List[dict]) -> None:
+    months = [p.get("month") for p in plans if p.get("month")]
+    dupes = sorted({m for m in months if months.count(m) > 1})
+    if dupes:
+        raise HTTPException(status_code=400, detail=f"Duplicate month(s) in plan: {', '.join(dupes)}")
+
+
 def _resolve_objective_category(db: DB, user_id: str, name: str, category_id: Optional[str]) -> str:
     if category_id:
         return category_id
@@ -89,8 +96,9 @@ def api_create_objective(
     current_user=Depends(get_current_user),
     db: DB = Depends(get_db),
 ):
-    category_id = _resolve_objective_category(db, current_user["user_id"], payload.name, payload.categoryId)
     data = payload.model_dump()
+    _reject_duplicate_months(data.get("plans", []))
+    category_id = _resolve_objective_category(db, current_user["user_id"], payload.name, payload.categoryId)
     data["categoryId"] = category_id
     try:
         return db.create_objective(current_user["user_id"], data, force=force)
@@ -107,6 +115,8 @@ def api_update_objective(
     db: DB = Depends(get_db),
 ):
     data = payload.model_dump(exclude_unset=True)
+    if "plans" in data:
+        _reject_duplicate_months(data["plans"])
     if "name" in data and "categoryId" not in data:
         data["categoryId"] = _resolve_objective_category(db, current_user["user_id"], data["name"], None)
     try:

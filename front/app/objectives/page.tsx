@@ -89,13 +89,20 @@ function ObjectiveDialog({
   }, [open])
 
   const addPlanRow = () => {
-    setPlans(prev => [...prev, {
-      id: `plan-${Date.now()}`,
-      month: new Date().toISOString().slice(0, 7),
-      amount: 0,
-      kind: 'SPEND',
-      isLastMonth: false,
-    }])
+    setPlans(prev => {
+      const months = prev.map(p => p.month).filter(Boolean).sort()
+      const base = months.length ? months[months.length - 1] : new Date().toISOString().slice(0, 7)
+      const [y, m] = base.split('-').map(Number)
+      const d = new Date(y, m, 1) // m is 1-based, so this lands on the following month
+      const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      return [...prev, {
+        id: `plan-${Date.now()}`,
+        month: next,
+        amount: 0,
+        kind: 'SPEND',
+        isLastMonth: false,
+      }]
+    })
   }
 
   const updatePlanRow = (id: string, updates: Partial<PlanRow>) => {
