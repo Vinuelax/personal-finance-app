@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     func,
     JSON,
+    CheckConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
@@ -40,22 +41,40 @@ class User(Base):
 
 class Category(Base):
     __tablename__ = "categories"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('expense','income','savings','investment','debt','transfer','mixed')",
+            name="categories_kind_ck",
+        ),
+    )
     id = Column(String, primary_key=True)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    parent_category_id = Column(String, ForeignKey("categories.id", ondelete="CASCADE"))
     name = Column(Text, nullable=False)
+    description = Column(Text)
+    # Legacy UI grouping; superseded by parent_category_id + kind.
     group = Column("group", Text)
+    kind = Column(Text, nullable=False, default="expense")
+    budgetable = Column(Boolean, nullable=False, default=True)
+    is_active = Column(Boolean, nullable=False, default=True)
     icon = Column(Text)
     color = Column(Text)
+    sort_order = Column(Integer)
+    meta = Column("metadata", JSON_TYPE)
+    archived_at = Column(TIMESTAMP(timezone=True))
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts, onupdate=now_ts)
 
     user = relationship("User", back_populates="categories")
+    parent = relationship("Category", remote_side=[id], backref="children")
 
 
 class Budget(Base):
     __tablename__ = "budgets"
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     month = Column(String, primary_key=True)  # YYYY-MM
+    start_month = Column(String)
+    end_month = Column(String)
     category_id = Column(String, ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True)
     limit_cents = Column(Integer, nullable=False)
     currency = Column(String)
@@ -66,6 +85,76 @@ class Budget(Base):
     carry_forward_enabled = Column(Boolean, nullable=False, default=True)
     is_terminal = Column(Boolean, nullable=False, default=False)
     objective_id = Column(String, ForeignKey("objectives.id", ondelete="SET NULL"))
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts, onupdate=now_ts)
+
+
+class BudgetRule(Base):
+    __tablename__ = "budget_rules"
+    __table_args__ = (
+        CheckConstraint(
+            "budget_type IN ('expense_cap','savings_target','debt_paydown','transfer_plan','investment_contribution')",
+            name="budget_rules_type_ck",
+        ),
+        CheckConstraint(
+            "rollover_mode IN ('none','same_rule','target_category')",
+            name="budget_rules_rollover_mode_ck",
+        ),
+        CheckConstraint(
+            "start_month ~ '^[0-9]{4}-[0-9]{2}$'",
+            name="budget_rules_start_month_fmt_ck",
+        ),
+        CheckConstraint(
+            "end_month IS NULL OR end_month ~ '^[0-9]{4}-[0-9]{2}$'",
+            name="budget_rules_end_month_fmt_ck",
+        ),
+        CheckConstraint(
+            "end_month IS NULL OR start_month <= end_month",
+            name="budget_rules_range_ck",
+        ),
+    )
+    id = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    category_id = Column(String, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False)
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+    budget_type = Column(Text, nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    currency = Column(Text)
+    start_month = Column(String, nullable=False)
+    end_month = Column(String)
+    rollover_mode = Column(Text, nullable=False, default="none")
+    rollover_target_category_id = Column(String, ForeignKey("categories.id", ondelete="SET NULL"))
+    carry_forward_enabled = Column(Boolean, nullable=False, default=True)
+    priority = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    meta = Column("metadata", JSON_TYPE)
+    archived_at = Column(TIMESTAMP(timezone=True))
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts, onupdate=now_ts)
+
+
+class BudgetRuleMonthOverride(Base):
+    __tablename__ = "budget_rule_month_overrides"
+    __table_args__ = (
+        CheckConstraint(
+            "month ~ '^[0-9]{4}-[0-9]{2}$'",
+            name="budget_rule_month_overrides_month_fmt_ck",
+        ),
+        CheckConstraint(
+            "rollover_mode IS NULL OR rollover_mode IN ('none','same_rule','target_category')",
+            name="budget_rule_month_overrides_rollover_mode_ck",
+        ),
+    )
+    rule_id = Column(String, ForeignKey("budget_rules.id", ondelete="CASCADE"), primary_key=True)
+    month = Column(String, primary_key=True)
+    amount_cents = Column(Integer)
+    is_skipped = Column(Boolean, nullable=False, default=False)
+    rollover_mode = Column(Text)
+    rollover_target_category_id = Column(String, ForeignKey("categories.id", ondelete="SET NULL"))
+    carry_forward_enabled = Column(Boolean)
+    note = Column(Text)
+    meta = Column("metadata", JSON_TYPE)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts, onupdate=now_ts)
 
@@ -96,6 +185,16 @@ class ObjectiveMonthPlan(Base):
 
 class Transaction(Base):
     __tablename__ = "transactions"
+    __table_args__ = (
+        CheckConstraint(
+            "entry_type IS NULL OR entry_type IN ('expense','income','transfer','savings_contribution','investment_contribution','investment_buy','investment_sell','debt_payment','debt_disbursement','refund','adjustment')",
+            name="transactions_entry_type_ck",
+        ),
+        CheckConstraint(
+            "budget_effect IS NULL OR budget_effect IN ('none','expense','contribution','paydown','income')",
+            name="transactions_budget_effect_ck",
+        ),
+    )
     id = Column(String, primary_key=True)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     txn_date = Column(Date, nullable=False)
@@ -103,7 +202,11 @@ class Transaction(Base):
     description = Column(Text)
     amount_cents = Column(Integer, nullable=False)
     currency = Column(Text, nullable=False)
+    # Legacy direct category ownership; v2 source of truth is budget_rule_id.
     category_id = Column(String, ForeignKey("categories.id", ondelete="SET NULL"))
+    budget_rule_id = Column(String, ForeignKey("budget_rules.id", ondelete="SET NULL"))
+    entry_type = Column(Text)
+    budget_effect = Column(Text)
     notes = Column(Text)
     source = Column(Text)
     account_id = Column(Text)
@@ -213,6 +316,30 @@ Index(
     "users_email_lower_ux",
     func.lower(User.email),
     unique=True,
+)
+Index(
+    "categories_user_parent_sort_idx",
+    Category.user_id,
+    Category.parent_category_id,
+    Category.is_active,
+    Category.sort_order,
+)
+Index(
+    "budget_rules_user_category_idx",
+    BudgetRule.user_id,
+    BudgetRule.category_id,
+    BudgetRule.is_active,
+)
+Index(
+    "budget_rules_user_range_idx",
+    BudgetRule.user_id,
+    BudgetRule.start_month,
+    BudgetRule.end_month,
+)
+Index(
+    "budget_rule_month_overrides_month_idx",
+    BudgetRuleMonthOverride.month,
+    BudgetRuleMonthOverride.rule_id,
 )
 Index(
     "transactions_user_date_desc_idx",

@@ -23,21 +23,36 @@ CREATE UNIQUE INDEX users_email_lower_ux ON users (lower(email));
 
 -- Categories
 CREATE TABLE categories (
-    id          TEXT PRIMARY KEY,           -- cat_xxx
-    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    "group"     TEXT,
-    icon        TEXT,
-    color       TEXT,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id               TEXT PRIMARY KEY,           -- cat_xxx
+    user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    parent_category_id TEXT REFERENCES categories(id) ON DELETE CASCADE,
+    name             TEXT NOT NULL,
+    description      TEXT,
+    "group"          TEXT,                       -- legacy UI grouping (deprecated)
+    kind             TEXT NOT NULL DEFAULT 'expense',
+    budgetable       BOOLEAN NOT NULL DEFAULT TRUE,
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    icon             TEXT,
+    color            TEXT,
+    sort_order       INTEGER,
+    metadata         JSONB,
+    archived_at      TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT categories_kind_ck CHECK (kind IN ('expense','income','savings','investment','debt','transfer','mixed')),
+    CONSTRAINT categories_not_self_parent_ck CHECK (parent_category_id IS NULL OR parent_category_id <> id)
 );
+CREATE INDEX categories_user_parent_idx ON categories (user_id, parent_category_id, is_active, sort_order);
+CREATE UNIQUE INDEX categories_user_parent_name_ux
+    ON categories (user_id, COALESCE(parent_category_id, ''), lower(name));
 
 
 -- Budgets (one per user/month/category)
 CREATE TABLE budgets (
     user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     month       TEXT NOT NULL,      -- YYYY-MM
+    start_month TEXT,
+    end_month   TEXT,
     category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
     limit_cents INTEGER NOT NULL,
     currency    TEXT,
@@ -84,6 +99,67 @@ ALTER TABLE budgets
     FOREIGN KEY (objective_id) REFERENCES objectives(id) ON DELETE SET NULL;
 
 
+-- V2 budget rules (effective-dated defaults attached to categories)
+CREATE TABLE budget_rules (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category_id     TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    budget_type     TEXT NOT NULL,
+    amount_cents    INTEGER NOT NULL,
+    currency        TEXT,
+    start_month     TEXT NOT NULL,
+    end_month       TEXT,
+    rollover_mode   TEXT NOT NULL DEFAULT 'none',
+    rollover_target_category_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
+    carry_forward_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    priority        INTEGER NOT NULL DEFAULT 0,
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata        JSONB,
+    archived_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT budget_rules_type_ck CHECK (budget_type IN ('expense_cap','savings_target','debt_paydown','transfer_plan','investment_contribution')),
+    CONSTRAINT budget_rules_rollover_mode_ck CHECK (rollover_mode IN ('none','same_rule','target_category')),
+    CONSTRAINT budget_rules_start_month_fmt_ck CHECK (start_month ~ '^[0-9]{4}-[0-9]{2}$'),
+    CONSTRAINT budget_rules_end_month_fmt_ck CHECK (end_month IS NULL OR end_month ~ '^[0-9]{4}-[0-9]{2}$'),
+    CONSTRAINT budget_rules_range_ck CHECK (end_month IS NULL OR start_month <= end_month),
+    CONSTRAINT budget_rules_target_rollover_ck CHECK (
+        (rollover_mode = 'target_category' AND rollover_target_category_id IS NOT NULL)
+        OR (rollover_mode <> 'target_category')
+    )
+);
+CREATE INDEX budget_rules_user_category_idx ON budget_rules (user_id, category_id, is_active);
+CREATE INDEX budget_rules_user_range_idx ON budget_rules (user_id, start_month, end_month);
+
+-- V2 one-month overrides for budget rules
+CREATE TABLE budget_rule_month_overrides (
+    rule_id          TEXT NOT NULL REFERENCES budget_rules(id) ON DELETE CASCADE,
+    month            TEXT NOT NULL,
+    amount_cents     INTEGER,
+    is_skipped       BOOLEAN NOT NULL DEFAULT FALSE,
+    rollover_mode    TEXT,
+    rollover_target_category_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
+    carry_forward_enabled BOOLEAN,
+    note             TEXT,
+    metadata         JSONB,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (rule_id, month),
+    CONSTRAINT budget_rule_month_overrides_month_fmt_ck CHECK (month ~ '^[0-9]{4}-[0-9]{2}$'),
+    CONSTRAINT budget_rule_month_overrides_rollover_mode_ck CHECK (
+        rollover_mode IS NULL OR rollover_mode IN ('none','same_rule','target_category')
+    ),
+    CONSTRAINT budget_rule_month_overrides_target_rollover_ck CHECK (
+        rollover_mode IS NULL
+        OR rollover_mode <> 'target_category'
+        OR rollover_target_category_id IS NOT NULL
+    )
+);
+CREATE INDEX budget_rule_month_overrides_month_idx ON budget_rule_month_overrides (month, rule_id);
+
+
 -- Transactions
 CREATE TABLE transactions (
     id              TEXT PRIMARY KEY,       -- txn_xxx
@@ -93,14 +169,26 @@ CREATE TABLE transactions (
     description     TEXT,
     amount_cents    INTEGER NOT NULL,       -- negative = expense
     currency        TEXT NOT NULL,
-    category_id     TEXT REFERENCES categories(id) ON DELETE SET NULL,
+    category_id     TEXT REFERENCES categories(id) ON DELETE SET NULL, -- legacy direct classification
+    budget_rule_id  TEXT REFERENCES budget_rules(id) ON DELETE SET NULL,
+    entry_type      TEXT,
+    budget_effect   TEXT,
     notes           TEXT,
     source          TEXT,
     account_id      TEXT,
     receipt_id      TEXT,                   -- FK added after receipts table
     splits          JSONB,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT transactions_entry_type_ck CHECK (
+        entry_type IS NULL OR entry_type IN (
+            'expense','income','transfer','savings_contribution','investment_contribution',
+            'investment_buy','investment_sell','debt_payment','debt_disbursement','refund','adjustment'
+        )
+    ),
+    CONSTRAINT transactions_budget_effect_ck CHECK (
+        budget_effect IS NULL OR budget_effect IN ('none','expense','contribution','paydown','income')
+    )
 );
 
 -- Feed ordering (replaces GSI1 on transactions)
@@ -236,6 +324,8 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER users_set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER categories_set_updated_at BEFORE UPDATE ON categories FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER budgets_set_updated_at BEFORE UPDATE ON budgets FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER budget_rules_set_updated_at BEFORE UPDATE ON budget_rules FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER budget_rule_month_overrides_set_updated_at BEFORE UPDATE ON budget_rule_month_overrides FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER transactions_set_updated_at BEFORE UPDATE ON transactions FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER receipts_set_updated_at BEFORE UPDATE ON receipts FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER recurring_rules_set_updated_at BEFORE UPDATE ON recurring_rules FOR EACH ROW EXECUTE FUNCTION set_updated_at();
