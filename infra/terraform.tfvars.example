@@ -28,7 +28,7 @@ ocr_lambda_timeout_seconds      = 120
 backend_lambda_memory_mb        = 512
 ocr_lambda_memory_mb            = 512
 internal_service_token          = "dev-internal-token"
-backend_cors_origins            = "*"
+backend_cors_origins            = "https://app.vinuelax.cl,http://localhost:3000,http://localhost:3001"
 ocr_provider                    = "mock"
 # Optional override. If empty, defaults to /<app_name>/<environment>/frontend/api_base_url
 frontend_api_base_url_ssm_parameter_name = ""

@@ -146,7 +146,7 @@ jobs:
           backend_lambda_memory_mb        = 512
           ocr_lambda_memory_mb            = 512
           internal_service_token          = "$INTERNAL_SERVICE_TOKEN"
-          backend_cors_origins            = "*"
+          backend_cors_origins            = "https://app.vinuelax.cl,http://localhost:3000,http://localhost:3001"
           ocr_provider                    = "mock"
           frontend_api_base_url_ssm_parameter_name = ""
           create_rds_postgres             = true
