@@ -3,8 +3,9 @@ from pathlib import Path
 from sqlalchemy import text
 
 
-ROOT = Path(__file__).resolve().parents[2]
-MIGRATIONS_DIR = ROOT / "back" / "db" / "migrations"
+# Resolve relative to this file so it works both in the repo layout
+# (back/db/migrations) and inside the flattened backend image (/app/db/migrations).
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 
 def ensure_schema_migrations_table(conn) -> None:

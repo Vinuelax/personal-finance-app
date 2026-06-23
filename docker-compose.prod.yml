@@ -1,0 +1,68 @@
+# Single-box PoC stack. Images are built/pushed to GHCR and pulled on the box.
+# Host nginx terminates TLS for app.vinuelax.cl and proxies to the localhost
+# ports published below (see deploy/nginx.app.conf.example).
+#
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+name: pfa-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-pfa}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-pfa}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # One-shot: applies pending SQL migrations, then exits. The API refuses to
+  # boot while migrations are pending, so this must succeed first.
+  migrate:
+    image: ghcr.io/vinuelax/personal-finance-app-api:${IMAGE_TAG:-latest}
+    build:
+      context: ./back
+      target: prod
+    command: ["python", "-m", "db.migrate"]
+    env_file: [.env.prod]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: ghcr.io/vinuelax/personal-finance-app-api:${IMAGE_TAG:-latest}
+    build:
+      context: ./back
+      target: prod
+    restart: unless-stopped
+    env_file: [.env.prod]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  web:
+    image: ghcr.io/vinuelax/personal-finance-app-web:${IMAGE_TAG:-latest}
+    build:
+      context: ./front
+      dockerfile: Dockerfile.static
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-https://app.vinuelax.cl/api/v1}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"
+
+volumes:
+  pgdata:

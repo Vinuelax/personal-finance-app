@@ -1,0 +1,28 @@
+# Host nginx for the PoC box. TLS via certbot (certbot --nginx -d app.vinuelax.cl
+# will fill in the ssl_* + listen 443 lines). Containers publish to localhost:
+#   web -> 127.0.0.1:3000   api -> 127.0.0.1:8000
+
+server {
+    listen 80;
+    server_name app.vinuelax.cl;
+    # certbot adds the 443 server + redirect; until then this serves plain HTTP.
+
+    client_max_body_size 15m;  # receipt/transaction-import uploads
+
+    # API -> FastAPI container. Backend routes live under /api/v1.
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Everything else -> static frontend container (nginx serving the export).
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
