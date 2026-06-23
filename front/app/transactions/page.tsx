@@ -883,7 +883,7 @@ function BudgetEditDialog({ open, onClose, category, month, budgetLimit, budgetE
 interface AddBudgetDialogProps {
   open: boolean
   onClose: () => void
-  onAdd: (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null }) => Promise<string | null>
+  onAdd: (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null; budgetMonth?: string }) => Promise<string | null>
 }
 
 const CATEGORY_ICONS = [
@@ -913,7 +913,7 @@ function AddBudgetDialog({ open, onClose, onAdd }: AddBudgetDialogProps) {
 
   const handleAdd = async () => {
     if (name && budget) {
-      await onAdd({
+      const createdId = await onAdd({
         name,
         icon: selectedIcon,
         color: selectedColor,
@@ -922,6 +922,7 @@ function AddBudgetDialog({ open, onClose, onAdd }: AddBudgetDialogProps) {
         rolloverTargetCategoryId: rollover ? (rolloverTarget === 'none' ? null : rolloverTarget) : null,
         purpose,
       })
+      if (!createdId) return
       setName('')
       setBudget('')
       setSelectedIcon('shopping-cart')
@@ -1034,7 +1035,7 @@ export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBud
   onUpsertBudget: (month: string, categoryId: string, data: { limit: number; rollover?: boolean; rolloverTargetCategoryId?: string | null; purpose?: string | null; carryForwardEnabled?: boolean; isTerminal?: boolean; applyToFuture?: boolean }) => void | Promise<void>
   onDeleteBudget: (categoryId: string, scope: 'this_month' | 'from_month' | 'all', month: string) => Promise<void>
   onUpdateCategory: (id: string, updates: Partial<Category>) => void
-  onAddCategory: (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null }) => Promise<string | null>
+  onAddCategory: (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null; budgetMonth?: string }) => Promise<string | null>
 }) {
   const formatCurrency = useCurrencyFormatter()
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
@@ -1198,12 +1199,23 @@ export function BudgetsView({ categories, transactions, budgetsByMonth, fetchBud
   }
   const canGoForward = selectedMonth < currentMonthStart
 
-  const handleAddCategory = async (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null }) => {
-    const id = await onAddCategory(category)
-    if (id && category.monthlyBudget !== undefined) {
-      await onUpsertBudget(selectedMonthKey, id, { limit: category.monthlyBudget, rollover: category.rollover, purpose: category.purpose ?? category.name })
+  const handleAddCategory = async (category: Omit<Category, 'id' | 'currentMonthSpent'> & { purpose?: string | null; budgetMonth?: string }) => {
+    const normalized = category.name.trim().toLowerCase()
+    const existing = categories.find(c => c.name.trim().toLowerCase() === normalized)
+    if (existing) {
+      const reuse = window.confirm(
+        `A category named "${existing.name}" already exists. Do you want to add/update its budget for ${selectedMonthKey} instead of creating a duplicate category?`
+      )
+      if (!reuse) return null
+      await onUpsertBudget(selectedMonthKey, existing.id, {
+        limit: category.monthlyBudget,
+        rollover: category.rollover,
+        rolloverTargetCategoryId: category.rolloverTargetCategoryId ?? null,
+        purpose: category.purpose ?? existing.name,
+      })
+      return existing.id
     }
-    return id
+    return onAddCategory({ ...category, budgetMonth: selectedMonthKey })
   }
 
   return (
@@ -1446,6 +1458,7 @@ function TransactionsContent() {
   const pickerCategories = useMemo(() => {
     if (!selectedTransactionMonth) return categories
     const monthBudgets = budgets[selectedTransactionMonth] || []
+    const monthBudgetCategoryIds = new Set(monthBudgets.map(b => b.categoryId))
     const budgetByCategory: Record<string, number> = {}
     monthBudgets.forEach(b => { budgetByCategory[b.categoryId] = b.limit })
 
@@ -1465,7 +1478,9 @@ function TransactionsContent() {
       }
     })
 
-    return categories.map(cat => ({
+    return categories
+      .filter(cat => monthBudgetCategoryIds.has(cat.id))
+      .map(cat => ({
       ...cat,
       monthlyBudget: budgetByCategory[cat.id] ?? 0,
       currentMonthSpent: spendingByCategory[cat.id] ?? 0,

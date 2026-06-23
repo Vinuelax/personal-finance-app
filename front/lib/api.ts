@@ -51,6 +51,8 @@ export interface ApiCategory {
 
 export interface ApiBudget {
   month: string
+  startMonth?: string | null
+  endMonth?: string | null
   categoryId: string
   limit: number
   rollover: boolean

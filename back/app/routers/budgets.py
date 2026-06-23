@@ -26,6 +26,8 @@ class BudgetIn(BaseModel):
     })
 
     month: str = Field(..., description="Month in YYYY-MM format")
+    startMonth: str | None = Field(None, description="Budget start month in YYYY-MM (defaults to month)")
+    endMonth: str | None = Field(None, description="Optional budget end month in YYYY-MM")
     categoryId: str = Field(..., description="Category this budget applies to")
     limit: int = Field(..., description="Spending limit in minor units")
     rollover: bool = Field(False, description="Whether leftover budget rolls over")
@@ -52,6 +54,8 @@ class BudgetUpdate(BaseModel):
     })
 
     limit: Optional[int] = Field(None, description="Updated spending limit")
+    startMonth: Optional[str] = Field(None, description="Updated budget start month in YYYY-MM")
+    endMonth: str | None = Field(None, description="Updated budget end month in YYYY-MM or null for no end")
     rollover: Optional[bool] = Field(None, description="Updated rollover flag")
     rolloverTargetCategoryId: str | None = Field(None, description="Category to receive surplus if rollover is enabled")
     currency: str | None = Field(None, description="Currency code override")
@@ -78,35 +82,33 @@ def _now_iso() -> str:
 def api_list_budgets(month: Optional[str] = None, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
     items = list_budgets(db, current_user["user_id"], month)
     if month:
-        # Resolve month view from latest budget <= requested month per category.
+        # Resolve month view from latest active budget sequence per category.
         all_items = list_budgets(db, current_user["user_id"], None)
         latest: dict[str, dict] = {}
         for i in all_items:
-            m = i.get("month")
+            start_m = i.get("startMonth") or i.get("month")
+            end_m = i.get("endMonth")
             cid = i.get("categoryId")
-            if not m or not cid:
+            if not start_m or not cid:
                 continue
-            if m > month:
+            if start_m > month:
+                continue
+            if end_m and end_m < month:
                 continue
             current = latest.get(cid)
-            if not current or m > current.get("month", ""):
+            current_start = (current or {}).get("startMonth") or (current or {}).get("month", "")
+            if not current or start_m > current_start:
                 latest[cid] = i
         filtered = []
         for i in latest.values():
-            budget_month = i.get("month")
-            if budget_month == month:
-                filtered.append(i)
-                continue
-            if not i.get("carryForwardEnabled", True):
-                continue
-            if i.get("isTerminal", False):
-                continue
             filtered.append(i)
         items = filtered
 
     return [
         {
             "month": i.get("month"),
+            "startMonth": i.get("startMonth") or i.get("month"),
+            "endMonth": i.get("endMonth"),
             "categoryId": i.get("categoryId"),
             "limit": i.get("limit"),
             "rollover": i.get("rollover", False),
@@ -129,6 +131,9 @@ def api_list_budgets(month: Optional[str] = None, current_user=Depends(get_curre
     description="Create a budget for a given month and category."
 )
 def api_create_budget(payload: BudgetIn, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
+    effective_start = payload.startMonth or payload.month
+    if payload.endMonth and effective_start > payload.endMonth:
+        raise HTTPException(400, "startMonth must be <= endMonth")
     existing = db.get_budget(current_user["user_id"], payload.month, payload.categoryId)
     if existing:
         raise HTTPException(status_code=409, detail="Budget already exists for this month/category")
@@ -144,6 +149,10 @@ def api_create_budget(payload: BudgetIn, current_user=Depends(get_current_user),
 )
 def api_update_budget(month: str, category_id: str, payload: BudgetUpdate, current_user=Depends(get_current_user), db: DB = Depends(get_db)):
     updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    if "endMonth" in payload.model_fields_set and payload.endMonth is None:
+        updates["endMonth"] = None
+    if "startMonth" in updates and updates.get("startMonth") and updates.get("endMonth") and updates["startMonth"] > updates["endMonth"]:
+        raise HTTPException(400, "startMonth must be <= endMonth")
     updated = db.update_budget(current_user["user_id"], month, category_id, updates)
     if not updated:
         raise HTTPException(404, "Budget not found")
@@ -166,6 +175,9 @@ def api_upsert_budget(
 ):
     if payload.month != month or payload.categoryId != category_id:
         raise HTTPException(400, "Payload month/category mismatch")
+    effective_start = payload.startMonth or payload.month
+    if payload.endMonth and effective_start > payload.endMonth:
+        raise HTTPException(400, "startMonth must be <= endMonth")
     existing = db.get_budget(current_user["user_id"], month, category_id)
     if apply_future:
         return db.upsert_budget_with_future(current_user["user_id"], month, category_id, payload.model_dump())

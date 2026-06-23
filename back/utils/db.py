@@ -48,6 +48,8 @@ def _category_dict(c: models.Category) -> Dict[str, Any]:
 def _budget_dict(b: models.Budget) -> Dict[str, Any]:
     return {
         "month": b.month,
+        "startMonth": b.start_month or b.month,
+        "endMonth": b.end_month,
         "categoryId": b.category_id,
         "limit": b.limit_cents,
         "rollover": b.rollover,
@@ -272,9 +274,12 @@ class DB:
         return _budget_dict(b) if b else None
 
     def create_budget(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        start_month = payload.get("startMonth") or payload["month"]
         b = models.Budget(
             user_id=user_id,
             month=payload["month"],
+            start_month=start_month,
+            end_month=payload.get("endMonth"),
             category_id=payload["categoryId"],
             limit_cents=payload["limit"],
             rollover=payload.get("rollover", False),
@@ -294,6 +299,10 @@ class DB:
     def _apply_budget_updates(self, b: models.Budget, updates: Dict[str, Any]) -> None:
         if "limit" in updates:
             b.limit_cents = updates["limit"]
+        if "startMonth" in updates:
+            b.start_month = updates["startMonth"]
+        if "endMonth" in updates:
+            b.end_month = updates["endMonth"]
         if "rollover" in updates:
             b.rollover = updates["rollover"]
         if "rolloverTargetCategoryId" in updates:
@@ -328,6 +337,8 @@ class DB:
             current = models.Budget(
                 user_id=user_id,
                 month=month,
+                start_month=payload.get("startMonth") or month,
+                end_month=payload.get("endMonth"),
                 category_id=category_id,
                 limit_cents=payload["limit"],
                 rollover=payload.get("rollover", False),
@@ -399,6 +410,8 @@ class DB:
             nb = models.Budget(
                 user_id=user_id,
                 month=target_month,
+                start_month=target_month,
+                end_month=None,
                 category_id=b.category_id,
                 limit_cents=b.limit_cents,
                 rollover=b.rollover,
@@ -489,6 +502,8 @@ class DB:
             budget = models.Budget(
                 user_id=user_id,
                 month=p["month"],
+                start_month=p["month"],
+                end_month=None,
                 category_id=category_id,
                 limit_cents=amount,
                 rollover=False,
@@ -550,6 +565,8 @@ class DB:
                 self.session.add(models.Budget(
                     user_id=user_id,
                     month=p["month"],
+                    start_month=p["month"],
+                    end_month=None,
                     category_id=obj.category_id,
                     limit_cents=amount,
                     rollover=False,
